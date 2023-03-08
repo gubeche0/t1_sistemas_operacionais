@@ -104,6 +104,10 @@ public class Sistema {
 		
 		private boolean legal(int e) {                             // todo acesso a memoria tem que ser verificado
 			// ????
+			if (false) {
+				irpt = Interrupts.intEnderecoInvalido;             // se endereco invalido, registra interrupcao
+				return false;
+			}
 			return true;
 		}
 
@@ -376,6 +380,19 @@ public class Sistema {
         }
         public void handle() {   // apenas avisa - todas interrupcoes neste momento finalizam o programa
             System.out.println("                                               Chamada de Sistema com op  /  par:  "+ vm.cpu.reg[8] + " / " + vm.cpu.reg[9]);
+			switch (vm.cpu.reg[8]) {
+				case 1:
+					Scanner ler = new Scanner(System.in);
+					System.out.println("Digite um valor: ");
+					vm.cpu.m[vm.cpu.reg[9]].opc = Opcode.DATA;      
+					vm.cpu.m[vm.cpu.reg[9]].p = ler.nextInt();  
+					break;
+				case 2:
+					System.out.println("OUT: " + vm.cpu.m[vm.cpu.reg[9]].p);
+					break;
+				default:
+					break;
+			}
 		}
     }
 
