@@ -35,7 +35,7 @@ public class Sistema {
 						System.out.print(w.p);  System.out.println("  ] ");
 		}
 		public void dump(int ini, int fim) {
-			for (int i = ini; i < fim; i++) {		
+			for (int i = ini; i < fim; i++) {
 				System.out.print(i); System.out.print(":  ");  dump(m[i]);
 			}
 		}
@@ -384,8 +384,8 @@ public class Sistema {
 				case 1:
 					Scanner ler = new Scanner(System.in);
 					System.out.println("Digite um valor: ");
-					vm.cpu.m[vm.cpu.reg[9]].opc = Opcode.DATA;      
-					vm.cpu.m[vm.cpu.reg[9]].p = ler.nextInt();  
+
+					vm.mem.m[vm.cpu.reg[9]] = new Word(Opcode.DATA, -1, -1, ler.nextInt());      
 					break;
 				case 2:
 					System.out.println("OUT: " + vm.cpu.m[vm.cpu.reg[9]].p);
@@ -445,10 +445,11 @@ public class Sistema {
 		Sistema s = new Sistema();			
 		//s.loadAndExec(progs.fibonacci10);
 		//s.loadAndExec(progs.progMinimo);
-		s.loadAndExec(progs.fatorial);
+		// s.loadAndExec(progs.fatorial);
 		//s.loadAndExec(progs.fatorialTRAP); // saida
 		//s.loadAndExec(progs.fibonacciTRAP); // entrada
 		//s.loadAndExec(progs.PC); // bubble sort
+		s.loadAndExec(progs.testeInput);
 			
 	}
 
@@ -461,6 +462,13 @@ public class Sistema {
    // que podem ser carregados para a memória (load faz isto)
 
    public class Programas {
+		public Word[] testeInput = new Word[] {
+			new Word(Opcode.LDI, 8, -1, 1), // r8 = input
+			new Word(Opcode.LDI, 9, -1, 4), // r9 = input
+			new Word(Opcode.TRAP, -1, -1, -1),
+			new Word(Opcode.STOP, -1, -1, -1),
+			new Word(Opcode.DATA, -1, -1, -1)};
+
 	   public Word[] fatorial = new Word[] {
 	 	           // este fatorial so aceita valores positivos.   nao pode ser zero
 	 											 // linha   coment
