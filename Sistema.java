@@ -449,8 +449,8 @@ public class Sistema {
 		//s.loadAndExec(progs.fatorialTRAP); // saida
 		//s.loadAndExec(progs.fibonacciTRAP); // entrada
 		//s.loadAndExec(progs.PC); // bubble sort
-		s.loadAndExec(progs.testeInput);
-			
+		//s.loadAndExec(progs.testeInput);
+		s.loadAndExec(progs.testeOutput);
 	}
 
 
@@ -465,6 +465,15 @@ public class Sistema {
 		public Word[] testeInput = new Word[] {
 			new Word(Opcode.LDI, 8, -1, 1), // r8 = input
 			new Word(Opcode.LDI, 9, -1, 4), // r9 = input
+			new Word(Opcode.TRAP, -1, -1, -1),
+			new Word(Opcode.STOP, -1, -1, -1),
+			new Word(Opcode.DATA, -1, -1, -1)};
+
+		public Word[] testeOutput = new Word[] {
+			new Word(Opcode.LDI, 0, -1, 999), // 
+			new Word(Opcode.STD, 0, -1, 10), // 
+			new Word(Opcode.LDI, 8, -1, 2), // 
+			new Word(Opcode.LDI, 9, -1, 10), // 
 			new Word(Opcode.TRAP, -1, -1, -1),
 			new Word(Opcode.STOP, -1, -1, -1),
 			new Word(Opcode.DATA, -1, -1, -1)};
