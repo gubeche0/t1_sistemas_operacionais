@@ -18,12 +18,12 @@ public class Sistema {
 	// --------------------- M E M O R I A -  definicoes de palavra de memoria, memória ---------------------- 
 	
 	public class Memory {
-		public int tamMem;    
+		public int tamMem;
         public Word[] m;                  // m representa a memória fisica:   um array de posicoes de memoria (word)
 	
 		public Memory(int size){
 			tamMem = size;
-		    m = new Word[tamMem];      
+		    m = new Word[tamMem];  
 		    for (int i=0; i<tamMem; i++) { m[i] = new Word(Opcode.___,-1,-1,-1); };
 		}
 		
@@ -340,8 +340,8 @@ public class Sistema {
 		public int tamMem;    
         public Word[] m;  
 		public Memory mem;   
-        public CPU cpu;    
-
+        public CPU cpu;
+		
         public VM(InterruptHandling ih, SysCallHandling sysCall){   
 		 // vm deve ser configurada com endereço de tratamento de interrupcoes e de chamadas de sistema
 	     // cria memória
@@ -350,7 +350,7 @@ public class Sistema {
 			 m = mem.m;
 	  	 // cria cpu
 			 cpu = new CPU(mem,ih,sysCall, true);                   // true liga debug
-	    }	
+		}
 	}
     // ------------------- V M  - fim ------------------------------------------------------------------------
 	// -------------------------------------------------------------------------------------------------------
@@ -405,7 +405,14 @@ public class Sistema {
 		}
 	}
 
+	public boolean aloca(int tam, int[] out) {
+		return false;
+	}
+
 	private void loadProgram(Word[] p) {
+		// aloca(p.length, out);
+		// loadProgram(p, out);
+		
 		loadProgram(p, vm.m);
 	}
 
@@ -427,6 +434,131 @@ public class Sistema {
 	public InterruptHandling ih;
 	public SysCallHandling sysCall;
 	public static Programas progs;
+	public GM gm; 
+
+	public class GM {
+		int tamFrame;
+		int tamPage;
+		Frame[] frames;
+		List<Integer> usedFrames;
+		Memory mem;
+
+		public GM(Memory _mem, int tamFrame, int tamMem) {
+			this.tamFrame = tamFrame;
+			this.tamPage = tamFrame;
+			this.mem = _mem;
+			
+			initializeFrames(tamFrame, tamMem);
+			this.usedFrames = new ArrayList<Integer>(tamMem / tamFrame);
+		}
+
+		private void initializeFrames(int tam, int tamMem) {
+			this.frames = new Frame[tamMem / tam];
+			for (int i = 0; i < this.frames.length; i++) {
+				this.frames[i] = new Frame(tam);
+				int base = i * tam;
+				for (int j = 0; j < tam; j++) {
+					this.frames[i].addresses[j] = base + j;
+					// this.frames[i].addresses[j] = mem.m[base + j];
+				}
+			}
+		}
+
+		// public int[] preAloc(int tam) {
+		// 	return new int[(int) Math.ceil(tam / (tamFrame * 1.0))]; 
+		// }
+
+		public boolean aloc(int tam, Pages pagesOut) {
+			int need = (int) Math.ceil(tam / (tamFrame * 1.0));
+
+			if (need <= frames.length - usedFrames.size()) {
+				int count = 0;
+				pagesOut.frames = new Frame[need];
+
+				for (int i = 0; i < frames.length; i++) {
+					if (!usedFrames.contains(i)) {
+						usedFrames.add(i);
+						// framesOut[count] = i;
+						pagesOut.frames[count] = frames[i];
+						count++;
+						if (count == need) {
+							return true;
+						}
+					}
+				}
+			}
+
+			return false;
+		}
+
+		public void free(int[] frames) {
+			for (int i = 0; i < frames.length; i++) {
+				usedFrames.remove((Integer) frames[i]);
+			}
+		}
+	}
+
+	class Frame {
+		int[] addresses;
+
+		public Frame(int tam) {
+			this.addresses = new int[tam];
+		}
+	}
+
+	class Pages {
+		Frame[] frames;
+
+		public Pages(int tam) {
+			this.frames = new Frame[tam];
+		}
+
+		public Pages() {
+		}
+
+		public int[] getAddresses() {
+			int[] addresses = new int[frames.length * frames[0].addresses.length];
+			int count = 0;
+			for (int i = 0; i < frames.length; i++) {
+				for (int j = 0; j < frames[i].addresses.length; j++) {
+					addresses[count] = frames[i].addresses[j];
+					count++;
+				}
+			}
+
+			return addresses;
+		}
+	}
+	class Process {
+		int pid;
+		int[] pages;
+
+		class PCB {
+			int pc;
+			int sp;
+			// int[] reg;
+		}
+
+		public Process() {
+			
+		}
+
+		public void load() {
+
+		}
+	}
+
+	// public class pageTable {
+	// 	int[] pages;
+	// 	int[] frames;
+
+	// 	public pageTable(int tam) {
+	// 		this.pages = new int[tam];
+	// 		this.frames = new int[tam];
+	// 	}
+	// }
+
+	
 
     public Sistema(){   // a VM com tratamento de interrupções
 		 ih = new InterruptHandling();
@@ -434,6 +566,8 @@ public class Sistema {
 		 vm = new VM(ih, sysCall);
 		 sysCall.setVM(vm);
 		 progs = new Programas();
+		 gm = new GM(vm.mem ,8, vm.tamMem);
+
 	}
 
     // -------------------  S I S T E M A - fim --------------------------------------------------------------
@@ -451,6 +585,20 @@ public class Sistema {
 		//s.loadAndExec(progs.PC); // bubble sort
 		//s.loadAndExec(progs.testeInput);
 		s.loadAndExec(progs.testeOutput);
+
+
+		// Pages p = s.new Pages();
+		// Pages p2 = s.new Pages();
+
+		// // int[] out =  s.gm.preAloc(10); // N existe ponteiros nessa desgraça de java???
+		// s.gm.aloc(10, p);
+		// s.gm.aloc(14, p2);
+
+		// System.out.println(s.gm.frames.length);
+		// System.out.println(p.frames.length);
+		// System.out.println(Arrays.toString(p.getAddresses()));
+		// System.out.println(Arrays.toString(p2.getAddresses()));
+		// System.out.println(Arrays.toString(out));
 	}
 
 
