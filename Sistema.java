@@ -560,12 +560,12 @@ public class Sistema {
 				System.out.println("frame: " + frame + " offset: " + offset + " virtual: " + virtualAddress);
 				return -1;
 			}
-			
+
 			return physicalAddress;
 		}
 
 		public boolean Validade(int virtualAddress) {
-			return virtualAddress < frames.length * gm.tamFrame;
+			return virtualAddress < frames.length * gm.tamFrame && virtualAddress >= 0;
 		}
 	}
 	class Process {
