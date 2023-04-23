@@ -643,6 +643,12 @@ public class Sistema {
 
 		s.criaProcesso(progs.fibonacci10);
 		s.criaProcesso(progs.fatorial);
+		s.ps();
+		s.dumpProcess(2);
+		s.killProcess(1);
+		s.ps();
+		// s.killProcess(1);
+		s.traceOff();
 		s.executaProcesso(2);
 	}
 
@@ -728,7 +734,7 @@ public class Sistema {
 			p.free();
 			return true;
 		} else {
-			System.out.println("Processo não encontrado na fila de ready");
+			System.out.println("Processo não encontrado na filas");
 			return false;
 		}
 	}
