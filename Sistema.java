@@ -104,8 +104,6 @@ public class Sistema {
 		}
 		
 		private boolean legal(int e) {                             // todo acesso a memoria tem que ser verificado
-			// ????
-			// pages.getPyhsicalAddress(e); // Validade exist 
 			if (!pages.Validade(e)) {
 				irpt = Interrupts.intEnderecoInvalido;             // se endereco invalido, registra interrupcao
 				return false;
@@ -488,10 +486,6 @@ public class Sistema {
 			}
 		}
 
-		// public int[] preAloc(int tam) {
-		// 	return new int[(int) Math.ceil(tam / (tamFrame * 1.0))]; 
-		// }
-
 		public boolean aloc(int tam, Pages pagesOut) {
 			int need = (int) Math.ceil(tam / (tamFrame * 1.0));
 
@@ -642,18 +636,6 @@ public class Sistema {
 		s.criaProcesso(progs.fibonacci10);
 		s.criaProcesso(progs.fatorial);
 		s.executaProcesso(2);
-		// Pages p = s.new Pages();
-		// Pages p2 = s.new Pages();
-
-		// // int[] out =  s.gm.preAloc(10); // N existe ponteiros nessa desgraça de java???
-		// s.gm.aloc(10, p);
-		// s.gm.aloc(14, p2);
-
-		// System.out.println(s.gm.frames.length);
-		// System.out.println(p.frames.length);
-		// System.out.println(Arrays.toString(p.getAddresses()));
-		// System.out.println(Arrays.toString(p2.getAddresses()));
-		// System.out.println(Arrays.toString(out));
 	}
 
 
@@ -669,9 +651,7 @@ public class Sistema {
 		if (p != null) {
 			running.add(p);
 			ready.remove(p);
-			// vm.executa(p.pages.getAddresses(), p.pcb.pc, p.pcb.sp);
-			// vm.cpu.run();
-			// execProcess(p);
+
 			vm.cpu.setContext(0, vm.tamMem - 1, p.pcb.pc, p.pages);
 			vm.cpu.run();
 		} else {
