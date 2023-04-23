@@ -498,12 +498,14 @@ public class Sistema {
 			if (need <= frames.length - usedFrames.size()) {
 				int count = 0;
 				pagesOut.frames = new Frame[need];
+				pagesOut.framesAddresses = new int[need];
 
 				for (int i = 0; i < frames.length; i++) {
 					if (!usedFrames.contains(i)) {
 						usedFrames.add(i);
 						// framesOut[count] = i;
 						pagesOut.frames[count] = frames[i];
+						pagesOut.framesAddresses[count] = i;
 						count++;
 						if (count == need) {
 							return true;
@@ -533,6 +535,7 @@ public class Sistema {
 
 	class Pages {
 		Frame[] frames;
+		int[] framesAddresses;
 
 		public Pages() {
 		}
@@ -592,6 +595,10 @@ public class Sistema {
 			for (int i = 0; i < p.length; i++) {
 				vm.m[addresses[i]] = p[i];
 			}
+		}
+
+		public void free() {
+			gm.free(pages.framesAddresses);
 		}
 	}
 
@@ -666,6 +673,91 @@ public class Sistema {
 		} else {
 			System.out.println("Processo não encontrado na fila de ready");
 		}
+	}
+
+	public void ps() {
+		System.out.println("PID\t\tEstado");
+		for (int i = 0; i < ready.size(); i++) {
+			System.out.println(ready.get(i).pid + "\t\tReady");
+		}
+
+		for (int i = 0; i < running.size(); i++) {
+			System.out.println(running.get(i).pid + "\t\tRunning");
+		}
+	}
+
+	public void dumpProcess(int pid) {
+		Process p = null;
+		for (int i = 0; i < ready.size(); i++) {
+			if (ready.get(i).pid == pid) {
+				p = ready.get(i);
+				break;
+			}
+		}
+		if (p == null) {
+			for (int i = 0; i < running.size(); i++) {
+				if (running.get(i).pid == pid) {
+					p = running.get(i);
+					break;
+				}
+			}
+		}
+
+		if (p != null) {
+			System.out.println("PID: " + p.pid);
+			System.out.println("PC: " + p.pcb.pc);
+			// System.out.println("SP: " + p.pcb.sp);
+			System.out.println("Reg: " + Arrays.toString(p.pcb.reg));
+			System.out.println("Pages: " + Arrays.toString(p.pages.getAddresses()));
+		} else {
+			System.out.println("Processo não encontrado na fila de ready");
+		}
+	}
+
+	public boolean killProcess(int pid) {
+		Process p = null;
+		for (int i = 0; i < ready.size(); i++) {
+			if (ready.get(i).pid == pid) {
+				p = ready.get(i);
+				break;
+			}
+		}
+		if (p == null) {
+			for (int i = 0; i < running.size(); i++) {
+				if (running.get(i).pid == pid) {
+					p = running.get(i);
+					break;
+				}
+			}
+		}
+
+		if (p != null) {
+			ready.remove(p);
+			p.free();
+			return true;
+		} else {
+			System.out.println("Processo não encontrado na fila de ready");
+			return false;
+		}
+	}
+
+	public void dumpMemory(int start, int end) {
+		System.out.println("Memória:");
+		for (int i = start; i <= end; i++) {
+			System.out.println(i + ": " + vm.m[i]);
+		}
+	}
+
+	public void traceOn() {
+		vm.cpu.debug = true;
+	}
+
+	public void traceOff() {
+		vm.cpu.debug = false;
+	}
+
+	public void exit() {
+		System.exit(0);
 	}
 
 
