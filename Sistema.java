@@ -550,10 +550,18 @@ public class Sistema {
 		public int getPyhsicalAddress(int virtualAddress) {
 			int frame = virtualAddress / gm.tamFrame;
 			int offset = virtualAddress % gm.tamFrame;
+			int physicalAddress;
 
+			// System.out.println("frame: " + frame + " offset: " + offset + " virtual: " + virtualAddress);
+			try {
+				physicalAddress = frames[frame].addresses[offset];
 
-			System.out.println("frame: " + frame + " offset: " + offset + " virtual: " + virtualAddress);
-			return frames[frame].addresses[offset];
+			} catch (IndexOutOfBoundsException e) {
+				System.out.println("frame: " + frame + " offset: " + offset + " virtual: " + virtualAddress);
+				return -1;
+			}
+			
+			return physicalAddress;
 		}
 
 		public boolean Validade(int virtualAddress) {
