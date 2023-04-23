@@ -83,6 +83,7 @@ public class Sistema {
 		private int limite; // por enquanto toda memoria pode ser acessada pelo processo rodando
 							// ATE AQUI: contexto da CPU - tudo que precisa sobre o estado de um processo para executa-lo
 							// nas proximas versoes isto pode modificar
+		private Pages pages;
 
 		private Memory mem;               // mem tem funcoes de dump e o array m de memória 'fisica' 
 		private Word[] m;                 // CPU acessa MEMORIA, guarda referencia a 'm'. m nao muda. semre será um array de palavras
@@ -104,6 +105,7 @@ public class Sistema {
 		
 		private boolean legal(int e) {                             // todo acesso a memoria tem que ser verificado
 			// ????
+			// pages.getPyhsicalAddress(e); // Validade exist 
 			if (false) {
 				irpt = Interrupts.intEnderecoInvalido;             // se endereco invalido, registra interrupcao
 				return false;
@@ -119,11 +121,12 @@ public class Sistema {
 			return true;
 		}
 		
-		public void setContext(int _base, int _limite, int _pc) {  // no futuro esta funcao vai ter que ser 
+		public void setContext(int _base, int _limite, int _pc, Pages _pages) {  // no futuro esta funcao vai ter que ser 
 			base = _base;                                          // expandida para setar todo contexto de execucao,
 			limite = _limite;									   // agora,  setamos somente os registradores base,
 			pc = _pc;                                              // limite e pc (deve ser zero nesta versao)
 			irpt = Interrupts.noInterrupt;                         // reset da interrupcao registrada
+			pages = _pages;
 		}
 		
 		public void run() { 		// execucao da CPU supoe que o contexto da CPU, vide acima, esta devidamente setado			
@@ -131,7 +134,7 @@ public class Sistema {
 			   // --------------------------------------------------------------------------------------------------
 			   // FETCH
 				if (legal(pc)) { 	// pc valido
-					ir = m[pc]; 	// <<<<<<<<<<<<           busca posicao da memoria apontada por pc, guarda em ir
+					ir = m[pages.getPyhsicalAddress(pc)]; 	// <<<<<<<<<<<<           busca posicao da memoria apontada por pc, guarda em ir
 					if (debug) { System.out.print("                               pc: "+pc+"       exec: ");  mem.dump(ir); }
 			   // --------------------------------------------------------------------------------------------------
 			   // EXECUTA INSTRUCAO NO ir
@@ -145,30 +148,30 @@ public class Sistema {
 
 						case LDD: // Rd <- [A]
 						    if (legal(ir.p)) {
-							   reg[ir.r1] = m[ir.p].p;
+							   reg[ir.r1] = m[pages.getPyhsicalAddress(ir.p)].p;
 							   pc++;
 						    }
 						    break;
 
 						case LDX: // RD <- [RS] // NOVA
 							if (legal(reg[ir.r2])) {
-								reg[ir.r1] = m[reg[ir.r2]].p;
+								reg[ir.r1] = m[pages.getPyhsicalAddress(reg[ir.r2])].p;
 								pc++;
 							}
 							break;
 
 						case STD: // [A] ← Rs
 						    if (legal(ir.p)) {
-							    m[ir.p].opc = Opcode.DATA;
-							    m[ir.p].p = reg[ir.r1];
+							    m[pages.getPyhsicalAddress(ir.p)].opc = Opcode.DATA;
+							    m[pages.getPyhsicalAddress(ir.p)].p = reg[ir.r1];
 							    pc++;
 							};
 						    break;
 
 						case STX: // [Rd] ←Rs
 						    if (legal(reg[ir.r1])) {
-							    m[reg[ir.r1]].opc = Opcode.DATA;      
-							    m[reg[ir.r1]].p = reg[ir.r2];          
+							    m[pages.getPyhsicalAddress(reg[ir.r1])].opc = Opcode.DATA;      
+							    m[pages.getPyhsicalAddress(reg[ir.r1])].p = reg[ir.r2];          
 								pc++;
 							};
 							break;
@@ -264,12 +267,12 @@ public class Sistema {
 							break; 
 	
 						case JMPIM: // PC <- [A]
-								 pc = m[ir.p].p;
+								 pc = m[pages.getPyhsicalAddress(ir.p)].p;
 							 break; 
 	
 						case JMPIGM: // If RC > 0 then PC <- [A] else PC++
 								 if (reg[ir.r2] > 0) {
-									pc = m[ir.p].p;
+									pc = m[pages.getPyhsicalAddress(ir.p)].p;
 								} else {
 									pc++;
 								}
@@ -277,7 +280,7 @@ public class Sistema {
 	
 						case JMPILM: // If RC < 0 then PC <- k else PC++
 								 if (reg[ir.r2] < 0) {
-									pc = m[ir.p].p;
+									pc = m[pages.getPyhsicalAddress(ir.p)].p;
 								} else {
 									pc++;
 								}
@@ -285,7 +288,7 @@ public class Sistema {
 	
 						case JMPIEM: // If RC = 0 then PC <- k else PC++
 								if (reg[ir.r2] == 0) {
-									pc = m[ir.p].p;
+									pc = m[pages.getPyhsicalAddress(ir.p)].p;
 								} else {
 									pc++;
 								}
@@ -405,9 +408,9 @@ public class Sistema {
 		}
 	}
 
-	public boolean aloca(int tam, int[] out) {
-		return false;
-	}
+	// public boolean aloca(int tam, int[] out) {
+	// 	return false;
+	// }
 
 	private void loadProgram(Word[] p) {
 		// aloca(p.length, out);
@@ -416,25 +419,45 @@ public class Sistema {
 		loadProgram(p, vm.m);
 	}
 
-	private void loadAndExec(Word[] p){
-		loadProgram(p);    // carga do programa na memoria
-				System.out.println("---------------------------------- programa carregado na memoria");
-				vm.mem.dump(0, p.length);            // dump da memoria nestas posicoes				
-		vm.cpu.setContext(0, vm.tamMem - 1, 0);      // seta estado da cpu ]
-				System.out.println("---------------------------------- inicia execucao ");
-		vm.cpu.run();                                // cpu roda programa ate parar	
-				System.out.println("---------------------------------- memoria após execucao ");
-				vm.mem.dump(0, p.length);            // dump da memoria com resultado
-	}
+	// private void loadAndExec(Word[] p){
+	// 	loadProgram(p);    // carga do programa na memoria
+	// 			System.out.println("---------------------------------- programa carregado na memoria");
+	// 			vm.mem.dump(0, p.length);            // dump da memoria nestas posicoes				
+	// 	vm.cpu.setContext(0, vm.tamMem - 1, 0);      // seta estado da cpu ]
+	// 			System.out.println("---------------------------------- inicia execucao ");
+	// 	vm.cpu.run();                                // cpu roda programa ate parar	
+	// 			System.out.println("---------------------------------- memoria após execucao ");
+	// 			vm.mem.dump(0, p.length);            // dump da memoria com resultado
+	// }
+
 
 	// -------------------------------------------------------------------------------------------------------
     // -------------------  S I S T E M A --------------------------------------------------------------------
+
+	public boolean criaProcesso(Word[] p) {
+		Process proc = new Process();
+
+		boolean response = gm.aloc(p.length, proc.pages);
+
+		if (!response) {
+			return false;
+		}
+		proc.pid = ++lastPid;
+
+		proc.load(p);
+		// proc.state = ProcessState.ready;
+		ready.add(proc);
+		return true;
+	}
 
 	public VM vm;
 	public InterruptHandling ih;
 	public SysCallHandling sysCall;
 	public static Programas progs;
 	public GM gm; 
+
+	public List<Process> ready, running; // blocked, finished;
+	public int lastPid = 0;
 
 	public class GM {
 		int tamFrame;
@@ -457,6 +480,7 @@ public class Sistema {
 			for (int i = 0; i < this.frames.length; i++) {
 				this.frames[i] = new Frame(tam);
 				int base = i * tam;
+				this.frames[i].base = base;
 				for (int j = 0; j < tam; j++) {
 					this.frames[i].addresses[j] = base + j;
 					// this.frames[i].addresses[j] = mem.m[base + j];
@@ -500,6 +524,7 @@ public class Sistema {
 
 	class Frame {
 		int[] addresses;
+		int base;
 
 		public Frame(int tam) {
 			this.addresses = new int[tam];
@@ -508,10 +533,6 @@ public class Sistema {
 
 	class Pages {
 		Frame[] frames;
-
-		public Pages(int tam) {
-			this.frames = new Frame[tam];
-		}
 
 		public Pages() {
 		}
@@ -528,37 +549,54 @@ public class Sistema {
 
 			return addresses;
 		}
+
+		public int getPyhsicalAddress(int virtualAddress) {
+			int frame = virtualAddress / gm.tamFrame;
+			int offset = virtualAddress % gm.tamFrame;
+
+
+			System.out.println("frame: " + frame + " offset: " + offset + " virtual: " + virtualAddress);
+			return frames[frame].addresses[offset];
+		}
 	}
 	class Process {
 		int pid;
-		int[] pages;
+		Pages pages;
+		PCB pcb;
 
 		class PCB {
 			int pc;
 			int sp;
-			// int[] reg;
+			int[] reg;
+
+			public PCB() {
+				this.pc = 0;
+				this.sp = 0;
+				this.reg = new int[10];
+			}
 		}
 
 		public Process() {
-			
+			this.pcb = new PCB();
+			this.pages = new Pages();
+
 		}
 
-		public void load() {
+		public void saveStatus() {
+			this.pcb.pc = vm.cpu.pc;
+			this.pcb.reg = vm.cpu.reg;
+		}
 
+		public void load(Word[] p) {
+			int[] addresses = pages.getAddresses();
+			for (int i = 0; i < p.length; i++) {
+				vm.m[addresses[i]] = p[i];
+			}
 		}
 	}
 
-	// public class pageTable {
-	// 	int[] pages;
-	// 	int[] frames;
 
-	// 	public pageTable(int tam) {
-	// 		this.pages = new int[tam];
-	// 		this.frames = new int[tam];
-	// 	}
-	// }
 
-	
 
     public Sistema(){   // a VM com tratamento de interrupções
 		 ih = new InterruptHandling();
@@ -567,6 +605,10 @@ public class Sistema {
 		 sysCall.setVM(vm);
 		 progs = new Programas();
 		 gm = new GM(vm.mem ,8, vm.tamMem);
+
+		 ready = new ArrayList<Process>();
+		 running = new ArrayList<Process>();
+		//  blocked = new ArrayList<Process>();
 
 	}
 
@@ -584,9 +626,11 @@ public class Sistema {
 		//s.loadAndExec(progs.fibonacciTRAP); // entrada
 		//s.loadAndExec(progs.PC); // bubble sort
 		//s.loadAndExec(progs.testeInput);
-		s.loadAndExec(progs.testeOutput);
+		// s.loadAndExec(progs.testeOutput);
 
-
+		s.criaProcesso(progs.fibonacci10);
+		s.criaProcesso(progs.fatorial);
+		s.executaProcesso(2);
 		// Pages p = s.new Pages();
 		// Pages p2 = s.new Pages();
 
@@ -599,6 +643,29 @@ public class Sistema {
 		// System.out.println(Arrays.toString(p.getAddresses()));
 		// System.out.println(Arrays.toString(p2.getAddresses()));
 		// System.out.println(Arrays.toString(out));
+	}
+
+
+	public void executaProcesso(int pid) {
+		Process p = null;
+		for (int i = 0; i < ready.size(); i++) {
+			if (ready.get(i).pid == pid) {
+				p = ready.get(i);
+				break;
+			}
+		}
+
+		if (p != null) {
+			running.add(p);
+			ready.remove(p);
+			// vm.executa(p.pages.getAddresses(), p.pcb.pc, p.pcb.sp);
+			// vm.cpu.run();
+			// execProcess(p);
+			vm.cpu.setContext(0, vm.tamMem - 1, p.pcb.pc, p.pages);
+			vm.cpu.run();
+		} else {
+			System.out.println("Processo não encontrado na fila de ready");
+		}
 	}
 
 
