@@ -106,7 +106,7 @@ public class Sistema {
 		private boolean legal(int e) {                             // todo acesso a memoria tem que ser verificado
 			// ????
 			// pages.getPyhsicalAddress(e); // Validade exist 
-			if (false) {
+			if (!pages.Validade(e)) {
 				irpt = Interrupts.intEnderecoInvalido;             // se endereco invalido, registra interrupcao
 				return false;
 			}
@@ -560,6 +560,10 @@ public class Sistema {
 
 			System.out.println("frame: " + frame + " offset: " + offset + " virtual: " + virtualAddress);
 			return frames[frame].addresses[offset];
+		}
+
+		public boolean Validade(int virtualAddress) {
+			return virtualAddress < frames.length * gm.tamFrame;
 		}
 	}
 	class Process {
