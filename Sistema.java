@@ -83,6 +83,7 @@ public class Sistema {
 		private int limite; // por enquanto toda memoria pode ser acessada pelo processo rodando
 							// ATE AQUI: contexto da CPU - tudo que precisa sobre o estado de um processo para executa-lo
 							// nas proximas versoes isto pode modificar
+		public int pid;
 		private Pages pages;
 
 		private Memory mem;               // mem tem funcoes de dump e o array m de memória 'fisica' 
@@ -119,12 +120,21 @@ public class Sistema {
 			return true;
 		}
 		
-		public void setContext(int _base, int _limite, int _pc, Pages _pages) {  // no futuro esta funcao vai ter que ser 
-			base = _base;                                          // expandida para setar todo contexto de execucao,
-			limite = _limite;									   // agora,  setamos somente os registradores base,
-			pc = _pc;                                              // limite e pc (deve ser zero nesta versao)
-			irpt = Interrupts.noInterrupt;                         // reset da interrupcao registrada
-			pages = _pages;
+		// public void setContext(int _base, int _limite, int _pc, Pages _pages) {  // no futuro esta funcao vai ter que ser 
+		// 	base = _base;                                          // expandida para setar todo contexto de execucao,
+		// 	limite = _limite;									   // agora,  setamos somente os registradores base,
+		// 	pc = _pc;                                              // limite e pc (deve ser zero nesta versao)
+		// 	irpt = Interrupts.noInterrupt;                         // reset da interrupcao registrada
+		// 	pages = _pages;
+		// }
+
+		public void setContext(Process p) {
+			base = 0;
+			limite = m.length - 1;
+			pc = p.pcb.pc;
+			irpt = Interrupts.noInterrupt;
+			pages = p.pages;
+			pid = p.pid;
 		}
 		
 		public void run() { 		// execucao da CPU supoe que o contexto da CPU, vide acima, esta devidamente setado			
@@ -370,6 +380,9 @@ public class Sistema {
     public class InterruptHandling {
             public void handle(Interrupts irpt, int pc) {   // apenas avisa - todas interrupcoes neste momento finalizam o programa
 				System.out.println("                                               Interrupcao "+ irpt+ "   pc: "+pc);
+				if (irpt == Interrupts.intSTOP) {
+					killProcess(vm.cpu.pid); // kill and free process
+				}
 			}
 	}
 
@@ -650,6 +663,7 @@ public class Sistema {
 		// s.killProcess(1);
 		s.traceOff();
 		s.executaProcesso(2);
+		s.ps();
 	}
 
 
@@ -666,7 +680,8 @@ public class Sistema {
 			running.add(p);
 			ready.remove(p);
 
-			vm.cpu.setContext(0, vm.tamMem - 1, p.pcb.pc, p.pages);
+			// vm.cpu.setContext(0, vm.tamMem - 1, p.pcb.pc, p.pages);
+			vm.cpu.setContext(p);
 			vm.cpu.run();
 		} else {
 			System.out.println("Processo não encontrado na fila de ready");
@@ -717,6 +732,7 @@ public class Sistema {
 		for (int i = 0; i < ready.size(); i++) {
 			if (ready.get(i).pid == pid) {
 				p = ready.get(i);
+				ready.remove(p);
 				break;
 			}
 		}
@@ -724,13 +740,14 @@ public class Sistema {
 			for (int i = 0; i < running.size(); i++) {
 				if (running.get(i).pid == pid) {
 					p = running.get(i);
+					running.remove(p);
 					break;
 				}
 			}
 		}
 
 		if (p != null) {
-			ready.remove(p);
+			// ready.remove(p);
 			p.free();
 			return true;
 		} else {
