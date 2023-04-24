@@ -656,20 +656,21 @@ public class Sistema {
 
 		s.criaProcesso(progs.fibonacci10);
 		s.criaProcesso(progs.fatorial);
-		s.ps();
-		s.dumpProcess(2);
-		s.killProcess(1);
-		s.ps();
+		// s.ps();
+		// s.dumpProcess(2);
 		// s.killProcess(1);
-		s.traceOff();
-		s.executaProcesso(2);
-		s.ps();
+		// s.ps();
+		// s.traceOff();
+		// s.executaProcesso(2);
+		// s.ps();
 
-		s.criaProcesso(progs.fatorial);
-		s.ps();
-		s.dumpProcess(3);
+		// s.criaProcesso(progs.fatorial);
+		// s.ps();
+		// s.dumpProcess(3);
 
-		s.dumpMemory(0, 10);
+		// s.dumpMemory(0, 10);
+
+		s.terminal();
 	}
 
 
@@ -776,6 +777,104 @@ public class Sistema {
 
 	public void exit() {
 		System.exit(0);
+	}
+
+	public void terminal() {
+		Scanner sc = new Scanner(System.in);
+		String cmd = "";
+		while (true) {
+			System.out.print(">> ");
+			cmd = sc.nextLine();
+			cmd = cmd.toLowerCase();
+			cmd = cmd.trim();
+			if (cmd.equals("exit")) {
+				break;
+
+			} else if (cmd.equals("ps")) {
+				ps();
+
+			} else if (cmd.equals("trace on")) {
+				traceOn();
+
+			} else if (cmd.equals("trace off")) {
+				traceOff();
+
+			} else if (cmd.equals("dump memory")) {
+				System.out.print("Start: ");
+				int start = sc.nextInt();
+				System.out.print("End: ");
+				int end = sc.nextInt();
+				dumpMemory(start, end);
+				sc.nextLine();
+
+			} else if (cmd.equals("dump process")) {
+				System.out.print("PID: ");
+				int pid = sc.nextInt();
+				dumpProcess(pid);
+				sc.nextLine();
+
+			} else if (cmd.equals("kill")) {
+				System.out.print("PID: ");
+				int pid = sc.nextInt();
+				killProcess(pid);
+				sc.nextLine();
+
+			} else if (cmd.equals("exec")) {
+				System.out.print("PID: ");
+				int pid = sc.nextInt();
+				executaProcesso(pid);
+				sc.nextLine();
+
+			} else if (cmd.equals("load")) {
+				System.out.print("Programa: ");
+				String prog = sc.nextLine();
+				if (prog.equals("fibonacci10")) {
+					criaProcesso(progs.fibonacci10);
+
+				} else if (prog.equals("fatorial")) {
+					criaProcesso(progs.fatorial);
+
+				} else if (prog.equals("fatorialTRAP")) {
+					criaProcesso(progs.fatorialTRAP);
+
+				} else if (prog.equals("fibonacciTRAP")) {
+					criaProcesso(progs.fibonacciTRAP);
+
+				} else if (prog.equals("PC")) {
+					criaProcesso(progs.PC);
+
+				} else if (prog.equals("testeInput")) {
+					criaProcesso(progs.testeInput);
+
+				} else if (prog.equals("testeOutput")) {
+					criaProcesso(progs.testeOutput);
+
+				} else if (prog.equals("progMinimo")) {
+					criaProcesso(progs.progMinimo);
+
+				} else {
+					System.out.println("Programa não encontrado");
+				}
+
+			} else if (cmd.equals("help")) {
+				System.out.println("Comandos:");
+				System.out.println("help");
+				System.out.println("load");
+				System.out.println("exec");
+				System.out.println("ps");
+				System.out.println("kill");
+				System.out.println("dump memory");
+				System.out.println("dump process");
+				System.out.println("trace on");
+				System.out.println("trace off");
+				System.out.println("exit");
+			} else {
+				System.out.println("Comando não encontrado");
+			}
+		}
+
+		sc.close();
+		exit();
 	}
 
 
