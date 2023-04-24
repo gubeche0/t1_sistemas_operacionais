@@ -413,22 +413,22 @@ public class Sistema {
     // ------------------ U T I L I T A R I O S   D O   S I S T E M A -----------------------------------------
 	// ------------------ load é invocado a partir de requisição do usuário
 
-	private void loadProgram(Word[] p, Word[] m) {
-		for (int i = 0; i < p.length; i++) {
-			m[i].opc = p[i].opc;     m[i].r1 = p[i].r1;     m[i].r2 = p[i].r2;     m[i].p = p[i].p;
-		}
-	}
+	// private void loadProgram(Word[] p, Word[] m) {
+	// 	for (int i = 0; i < p.length; i++) {
+	// 		m[i].opc = p[i].opc;     m[i].r1 = p[i].r1;     m[i].r2 = p[i].r2;     m[i].p = p[i].p;
+	// 	}
+	// }
 
 	// public boolean aloca(int tam, int[] out) {
 	// 	return false;
 	// }
 
-	private void loadProgram(Word[] p) {
-		// aloca(p.length, out);
-		// loadProgram(p, out);
+	// private void loadProgram(Word[] p) {
+	// 	// aloca(p.length, out);
+	// 	// loadProgram(p, out);
 		
-		loadProgram(p, vm.m);
-	}
+	// 	loadProgram(p, vm.m);
+	// }
 
 	// private void loadAndExec(Word[] p){
 	// 	loadProgram(p);    // carga do programa na memoria
@@ -664,6 +664,12 @@ public class Sistema {
 		s.traceOff();
 		s.executaProcesso(2);
 		s.ps();
+
+		s.criaProcesso(progs.fatorial);
+		s.ps();
+		s.dumpProcess(3);
+
+		s.dumpMemory(0, 10);
 	}
 
 
@@ -757,10 +763,7 @@ public class Sistema {
 	}
 
 	public void dumpMemory(int start, int end) {
-		System.out.println("Memória:");
-		for (int i = start; i <= end; i++) {
-			System.out.println(i + ": " + vm.m[i]);
-		}
+		vm.mem.dump(start, end);
 	}
 
 	public void traceOn() {
