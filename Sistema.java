@@ -135,6 +135,7 @@ public class Sistema {
 			irpt = Interrupts.noInterrupt;
 			pages = p.pages;
 			pid = p.pid;
+			reg = p.pcb.reg;
 		}
 		
 		public void run() { 		// execucao da CPU supoe que o contexto da CPU, vide acima, esta devidamente setado			
@@ -588,12 +589,10 @@ public class Sistema {
 
 		class PCB {
 			int pc;
-			int sp;
 			int[] reg;
 
 			public PCB() {
 				this.pc = 0;
-				this.sp = 0;
 				this.reg = new int[10];
 			}
 		}
