@@ -9,8 +9,8 @@
 
 import java.util.*;
 
-public class Sistema {
-	
+public class Sistema {	
+	public static int CPU_TIMER_SLICE = 5;
 	// -------------------------------------------------------------------------------------------------------
 	// --------------------- H A R D W A R E - definicoes de HW ---------------------------------------------- 
 
@@ -68,7 +68,27 @@ public class Sistema {
 	}
 
 	public enum Interrupts {               // possiveis interrupcoes que esta CPU gera
-		noInterrupt, intEnderecoInvalido, intInstrucaoInvalida, intOverflow, intSTOP;
+		noInterrupt, intEnderecoInvalido, intInstrucaoInvalida, intOverflow, intSTOP, intTimerSlice;
+	}
+
+	public class ClockInterrupt {
+		public CPU cpu;
+		public int ticks;
+		public ClockInterrupt() { 
+			ticks = 0; 
+		}
+
+		public void _setCpu(CPU _cpu) {
+			this.cpu = _cpu;
+		}
+
+		public void tick() { 
+			ticks++;
+			if (ticks % CPU_TIMER_SLICE == 0) {
+				cpu.irpt = Interrupts.intTimerSlice;
+				ticks = 0;
+			}
+		}
 	}
 
 	public class CPU {
@@ -86,14 +106,18 @@ public class Sistema {
 		public int pid;
 		private Pages pages;
 
+		private ClockInterrupt clock;
+
 		private Memory mem;               // mem tem funcoes de dump e o array m de memória 'fisica' 
 		private Word[] m;                 // CPU acessa MEMORIA, guarda referencia a 'm'. m nao muda. semre será um array de palavras
 
 		private InterruptHandling ih;     // significa desvio para rotinas de tratamento de  Int - se int ligada, desvia
         private SysCallHandling sysCall;  // significa desvio para tratamento de chamadas de sistema - trap 
 		private boolean debug;            // se true entao mostra cada instrucao em execucao
+
+		public String executionMode = "single"; // single ou multi
 						
-		public CPU(Memory _mem, InterruptHandling _ih, SysCallHandling _sysCall, boolean _debug) {     // ref a MEMORIA e interrupt handler passada na criacao da CPU
+		public CPU(Memory _mem, InterruptHandling _ih, SysCallHandling _sysCall, boolean _debug, ClockInterrupt _clock) {     // ref a MEMORIA e interrupt handler passada na criacao da CPU
 			maxInt =  32767;        // capacidade de representacao modelada
 			minInt = -32767;        // se exceder deve gerar interrupcao de overflow
 			mem = _mem;	            // usa mem para acessar funcoes auxiliares (dump)
@@ -102,6 +126,8 @@ public class Sistema {
 			ih = _ih;               // aponta para rotinas de tratamento de int
             sysCall = _sysCall;     // aponta para rotinas de tratamento de chamadas de sistema
 			debug =  _debug;        // se true, print da instrucao em execucao
+			clock = _clock;
+			clock._setCpu(this);
 		}
 		
 		private boolean legal(int e) {                             // todo acesso a memoria tem que ser verificado
@@ -141,10 +167,14 @@ public class Sistema {
 		public void run() { 		// execucao da CPU supoe que o contexto da CPU, vide acima, esta devidamente setado			
 			while (true) { 			// ciclo de instrucoes. acaba cfe instrucao, veja cada caso.
 			   // --------------------------------------------------------------------------------------------------
+
+			   // Incrementa clock
+				clock.tick();
+
 			   // FETCH
 				if (legal(pc)) { 	// pc valido
 					ir = m[pages.getPyhsicalAddress(pc)]; 	// <<<<<<<<<<<<           busca posicao da memoria apontada por pc, guarda em ir
-					if (debug) { System.out.print("                               pc: "+pc+"       exec: ");  mem.dump(ir); }
+					if (debug) { System.out.print("                               PID: "+ pid +" pc: "+pc+"       exec: ");  mem.dump(ir); }
 			   // --------------------------------------------------------------------------------------------------
 			   // EXECUTA INSTRUCAO NO ir
 					switch (ir.opc) {   // conforme o opcode (código de operação) executa
@@ -335,8 +365,13 @@ public class Sistema {
 			   // --------------------------------------------------------------------------------------------------
 			   // VERIFICA INTERRUPÇÃO !!! - TERCEIRA FASE DO CICLO DE INSTRUÇÕES
 				if (!(irpt == Interrupts.noInterrupt)) {   // existe interrupção
-					ih.handle(irpt,pc);                       // desvia para rotina de tratamento
-					break; // break sai do loop da cpu
+
+					boolean continuar = ih.handle(irpt,pc);                   // desvia para rotina de tratamento
+					if (continuar) {
+						irpt = Interrupts.noInterrupt;
+					} else {
+						break; // break sai do loop da cpu
+					}
 				}
 			}  // FIM DO CICLO DE UMA INSTRUÇÃO
 		}      
@@ -353,6 +388,7 @@ public class Sistema {
         public Word[] m;  
 		public Memory mem;   
         public CPU cpu;
+		public ClockInterrupt clock;
 		
         public VM(InterruptHandling ih, SysCallHandling sysCall){   
 		 // vm deve ser configurada com endereço de tratamento de interrupcoes e de chamadas de sistema
@@ -361,7 +397,10 @@ public class Sistema {
   		 	 mem = new Memory(tamMem);
 			 m = mem.m;
 	  	 // cria cpu
-			 cpu = new CPU(mem,ih,sysCall, true);                   // true liga debug
+			
+			clock = new ClockInterrupt();
+			
+			cpu = new CPU(mem,ih,sysCall, true, clock);                   // true liga debug
 		}
 	}
     // ------------------- V M  - fim ------------------------------------------------------------------------
@@ -379,11 +418,46 @@ public class Sistema {
 
 	// ------------------- I N T E R R U P C O E S  - rotinas de tratamento ----------------------------------
     public class InterruptHandling {
-            public void handle(Interrupts irpt, int pc) {   // apenas avisa - todas interrupcoes neste momento finalizam o programa
+            public boolean handle(Interrupts irpt, int pc) {   // apenas avisa - todas interrupcoes neste momento finalizam o programa
 				System.out.println("                                               Interrupcao "+ irpt+ "   pc: "+pc);
 				if (irpt == Interrupts.intSTOP) {
+					if (vm.cpu.debug) System.out.println("Processo finalizado: " + vm.cpu.pid);
 					killProcess(vm.cpu.pid); // kill and free process
+					if (vm.cpu.executionMode == "single") {
+						return false;
+					}
+
+					if (ready.size() == 0) {
+						if (vm.cpu.debug) System.out.println("Todos os processos foram finalizados");
+						return false;
+					}
+					Process next = ready.get(0);
+					if (vm.cpu.debug) System.out.println("Colocando processo " + next.pid + " na CPU");
+					next.moveToRunning();
+					next.restoreStatus();
+
+
+					// return false;
+				} else if (irpt == Interrupts.intTimerSlice) {
+					if (vm.cpu.executionMode == "single") {
+						// Ignora o escalonamento de processos
+						return true;
+					}
+
+					Process p = getProcess(vm.cpu.pid);
+					if (vm.cpu.debug) System.out.println("Removendo processo " + p.pid + " da CPU; Colocando na fila de pronto");
+					p.saveStatus();
+					// Move to ready
+					p.moveToReady();
+
+					// Get next process
+					Process next = ready.get(0);
+					if (vm.cpu.debug) System.out.println("Colocando processo " + next.pid + " na CPU");
+					next.moveToRunning();
+					next.restoreStatus();
 				}
+
+				return true;
 			}
 	}
 
@@ -608,6 +682,12 @@ public class Sistema {
 			this.pcb.reg = vm.cpu.reg;
 		}
 
+		public void restoreStatus() {
+			vm.cpu.pc = this.pcb.pc;
+			vm.cpu.reg = this.pcb.reg;
+			vm.cpu.pid = this.pid;
+		}
+
 		public void load(Word[] p) {
 			int[] addresses = pages.getAddresses();
 			for (int i = 0; i < p.length; i++) {
@@ -618,9 +698,51 @@ public class Sistema {
 		public void free() {
 			gm.free(pages.framesAddresses);
 		}
+
+		public void moveToReady() {
+			ready.add(this);
+			running.remove(this);
+		}
+
+		public void moveToRunning() {
+			running.add(this);
+			ready.remove(this);
+		}
 	}
 
+	public Process getProcessFromReady(int pid) {
+		for (Process p : ready) {
+			if (p.pid == pid) {
+				return p;
+			}
+		}
 
+		return null;
+	}
+
+	public Process getProcessFromRunning(int pid) {
+		for (Process p : running) {
+			if (p.pid == pid) {
+				return p;
+			}
+		}
+
+		return null;
+	}
+
+	public Process getProcess(int pid) {
+		Process p = getProcessFromReady(pid);
+		if (p != null) {
+			return p;
+		}
+
+		p = getProcessFromRunning(pid);
+		if (p != null) {
+			return p;
+		}
+
+		return null;
+	}	
 
 
     public Sistema(){   // a VM com tratamento de interrupções
@@ -675,13 +797,7 @@ public class Sistema {
 
 
 	public void executaProcesso(int pid) {
-		Process p = null;
-		for (int i = 0; i < ready.size(); i++) {
-			if (ready.get(i).pid == pid) {
-				p = ready.get(i);
-				break;
-			}
-		}
+		Process p = getProcessFromReady(pid);
 
 		if (p != null) {
 			running.add(p);
@@ -689,9 +805,25 @@ public class Sistema {
 
 			// vm.cpu.setContext(0, vm.tamMem - 1, p.pcb.pc, p.pages);
 			vm.cpu.setContext(p);
+			vm.cpu.executionMode = "single";
 			vm.cpu.run();
 		} else {
 			System.out.println("Processo não encontrado na fila de ready");
+		}
+	}
+
+	public void executaTudo() {
+		if (ready.size() > 0) {
+			Process p = ready.get(0);
+			running.add(p);
+			ready.remove(p);
+
+			// vm.cpu.setContext(0, vm.tamMem - 1, p.pcb.pc, p.pages);
+			vm.cpu.setContext(p);
+			vm.cpu.executionMode = "multi";
+			vm.cpu.run();
+		} else {
+			System.out.println("Não há processos na fila de ready");
 		}
 	}
 
@@ -736,26 +868,12 @@ public class Sistema {
 	}
 
 	public boolean killProcess(int pid) {
-		Process p = null;
-		for (int i = 0; i < ready.size(); i++) {
-			if (ready.get(i).pid == pid) {
-				p = ready.get(i);
-				ready.remove(p);
-				break;
-			}
-		}
-		if (p == null) {
-			for (int i = 0; i < running.size(); i++) {
-				if (running.get(i).pid == pid) {
-					p = running.get(i);
-					running.remove(p);
-					break;
-				}
-			}
-		}
+		Process p = getProcess(pid);
 
 		if (p != null) {
-			// ready.remove(p);
+			ready.remove(p);
+			running.remove(p);
+
 			p.free();
 			return true;
 		} else {
@@ -825,6 +943,8 @@ public class Sistema {
 				int pid = sc.nextInt();
 				executaProcesso(pid);
 				sc.nextLine();
+			} else if (cmd.equals("execall")) {
+				executaTudo();
 
 			} else if (cmd.equals("load")) {
 				System.out.print("Programa: ");
@@ -862,6 +982,7 @@ public class Sistema {
 				System.out.println("help");
 				System.out.println("load");
 				System.out.println("exec");
+				System.out.println("execall");
 				System.out.println("ps");
 				System.out.println("kill");
 				System.out.println("dump memory");
