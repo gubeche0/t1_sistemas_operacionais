@@ -653,8 +653,9 @@ public class Sistema {
 		//s.loadAndExec(progs.testeInput);
 		// s.loadAndExec(progs.testeOutput);
 
-		s.criaProcesso(progs.fibonacci10);
 		s.criaProcesso(progs.fatorial);
+		s.criaProcesso(progs.fibonacci10);
+		
 		// s.ps();
 		// s.dumpProcess(2);
 		// s.killProcess(1);
@@ -727,7 +728,8 @@ public class Sistema {
 			System.out.println("PC: " + p.pcb.pc);
 			// System.out.println("SP: " + p.pcb.sp);
 			System.out.println("Reg: " + Arrays.toString(p.pcb.reg));
-			System.out.println("Pages: " + Arrays.toString(p.pages.getAddresses()));
+			System.out.println("Frames: " + Arrays.toString(p.pages.framesAddresses));
+			System.out.println("Address Pyhsical: " + Arrays.toString(p.pages.getAddresses()));
 		} else {
 			System.out.println("Processo não encontrado na fila de ready");
 		}
