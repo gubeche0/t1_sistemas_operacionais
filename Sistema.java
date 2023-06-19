@@ -138,6 +138,10 @@ public class Sistema {
 			return true;
 		}
 
+		public int translateAddress(int e) {
+			return pages.getPyhsicalAddress(e);
+		}
+
 		private boolean testOverflow(int v) {                       // toda operacao matematica deve avaliar se ocorre overflow                      
 			if ((v < minInt) || (v > maxInt)) {                       
 				irpt = Interrupts.intOverflow;             
@@ -168,6 +172,7 @@ public class Sistema {
 			while (true) { 			// ciclo de instrucoes. acaba cfe instrucao, veja cada caso.
 			   // --------------------------------------------------------------------------------------------------
 
+			   // TODO: Incrementar relogio aqui depois de implementar mecanismo de fila ou buffer para as interupcoes
 			   // Incrementa clock
 				clock.tick();
 
@@ -175,6 +180,7 @@ public class Sistema {
 				if (legal(pc)) { 	// pc valido
 					ir = m[pages.getPyhsicalAddress(pc)]; 	// <<<<<<<<<<<<           busca posicao da memoria apontada por pc, guarda em ir
 					if (debug) { System.out.print("                               PID: "+ pid +" pc: "+pc+"       exec: ");  mem.dump(ir); }
+					// clock.tick();
 			   // --------------------------------------------------------------------------------------------------
 			   // EXECUTA INSTRUCAO NO ir
 					switch (ir.opc) {   // conforme o opcode (código de operação) executa
@@ -437,7 +443,7 @@ public class Sistema {
 					next.restoreStatus();
 
 
-					// return false;
+					return true;
 				} else if (irpt == Interrupts.intTimerSlice) {
 					if (vm.cpu.executionMode == "single") {
 						// Ignora o escalonamento de processos
@@ -445,6 +451,9 @@ public class Sistema {
 					}
 
 					Process p = getProcess(vm.cpu.pid);
+					// System.out.println(running);
+					// System.out.println(ready);
+
 					if (vm.cpu.debug) System.out.println("Removendo processo " + p.pid + " da CPU; Colocando na fila de pronto");
 					p.saveStatus();
 					// Move to ready
@@ -455,7 +464,23 @@ public class Sistema {
 					if (vm.cpu.debug) System.out.println("Colocando processo " + next.pid + " na CPU");
 					next.moveToRunning();
 					next.restoreStatus();
+					return true;
 				}
+				
+				System.out.println("Interupção não tratada, finalizando processo: " + vm.cpu.pid);
+				killProcess(vm.cpu.pid);
+				if (vm.cpu.executionMode == "single") {
+					return false;
+				}
+
+				if (ready.size() == 0) {
+					if (vm.cpu.debug) System.out.println("Todos os processos foram finalizados");
+					return false;
+				}
+				Process next = ready.get(0);
+				if (vm.cpu.debug) System.out.println("Colocando processo " + next.pid + " na CPU");
+				next.moveToRunning();
+				next.restoreStatus();
 
 				return true;
 			}
@@ -469,15 +494,21 @@ public class Sistema {
         }
         public void handle() {   // apenas avisa - todas interrupcoes neste momento finalizam o programa
             System.out.println("                                               Chamada de Sistema com op  /  par:  "+ vm.cpu.reg[8] + " / " + vm.cpu.reg[9]);
-			switch (vm.cpu.reg[8]) {
+			// Read and save registers
+			int op = vm.cpu.reg[8];
+			int addressLogic = vm.cpu.reg[9];
+			int addressPhysical = vm.cpu.translateAddress(addressLogic);
+			// System.out.println("                                               Endereco logico: " + addressLogic + " / Endereco fisico: " + addressPhysical);
+			switch (op) {
 				case 1:
 					Scanner ler = new Scanner(System.in);
 					System.out.println("Digite um valor: ");
 
-					vm.mem.m[vm.cpu.reg[9]] = new Word(Opcode.DATA, -1, -1, ler.nextInt());      
+					vm.mem.m[addressPhysical] = new Word(Opcode.DATA, -1, -1, ler.nextInt());
+					ler.nextLine();
 					break;
 				case 2:
-					System.out.println("OUT: " + vm.cpu.m[vm.cpu.reg[9]].p);
+					System.out.println("OUT: " + vm.cpu.m[addressPhysical].p);
 					break;
 				default:
 					break;
@@ -542,7 +573,7 @@ public class Sistema {
 	public static Programas progs;
 	public GM gm; 
 
-	public List<Process> ready, running; // blocked, finished;
+	public List<Process> ready, running, blocked ; //finished;
 	public int lastPid = 0;
 
 	public class GM {
@@ -683,9 +714,7 @@ public class Sistema {
 		}
 
 		public void restoreStatus() {
-			vm.cpu.pc = this.pcb.pc;
-			vm.cpu.reg = this.pcb.reg;
-			vm.cpu.pid = this.pid;
+			vm.cpu.setContext(this);
 		}
 
 		public void load(Word[] p) {
@@ -708,6 +737,21 @@ public class Sistema {
 			running.add(this);
 			ready.remove(this);
 		}
+
+		public void moveToBlocked() {
+			blocked.add(this);
+			running.remove(this);
+		}
+	}
+
+	public Process getProcessFromBlocked(int pid) {
+		for (Process p : blocked) {
+			if (p.pid == pid) {
+				return p;
+			}
+		}
+
+		return null;
 	}
 
 	public Process getProcessFromReady(int pid) {
@@ -741,7 +785,7 @@ public class Sistema {
 			return p;
 		}
 
-		return null;
+		return getProcessFromBlocked(pid);
 	}	
 
 
@@ -755,7 +799,7 @@ public class Sistema {
 
 		 ready = new ArrayList<Process>();
 		 running = new ArrayList<Process>();
-		//  blocked = new ArrayList<Process>();
+		 blocked = new ArrayList<Process>();
 
 	}
 
@@ -777,6 +821,11 @@ public class Sistema {
 
 		s.criaProcesso(progs.fatorial);
 		s.criaProcesso(progs.fibonacci10);
+		s.criaProcesso(progs.testeOutput);
+		s.criaProcesso(progs.testeInput);
+		// s.criaProcesso(progs.testeOutput);
+
+
 		
 		// s.ps();
 		// s.dumpProcess(2);
@@ -836,24 +885,14 @@ public class Sistema {
 		for (int i = 0; i < running.size(); i++) {
 			System.out.println(running.get(i).pid + "\t\tRunning");
 		}
+
+		for (int i = 0; i < blocked.size(); i++) {
+			System.out.println(blocked.get(i).pid + "\t\tBlocked");
+		}
 	}
 
 	public void dumpProcess(int pid) {
-		Process p = null;
-		for (int i = 0; i < ready.size(); i++) {
-			if (ready.get(i).pid == pid) {
-				p = ready.get(i);
-				break;
-			}
-		}
-		if (p == null) {
-			for (int i = 0; i < running.size(); i++) {
-				if (running.get(i).pid == pid) {
-					p = running.get(i);
-					break;
-				}
-			}
-		}
+		Process p = getProcess(pid);
 
 		if (p != null) {
 			System.out.println("PID: " + p.pid);
@@ -867,12 +906,13 @@ public class Sistema {
 		}
 	}
 
-	public boolean killProcess(int pid) {
+	public boolean killProcess(int pid) { // Testar matar processo em execução
 		Process p = getProcess(pid);
 
 		if (p != null) {
 			ready.remove(p);
 			running.remove(p);
+			blocked.remove(p);
 
 			p.free();
 			return true;
@@ -1017,9 +1057,9 @@ public class Sistema {
 
 		public Word[] testeOutput = new Word[] {
 			new Word(Opcode.LDI, 0, -1, 999), // 
-			new Word(Opcode.STD, 0, -1, 10), // 
+			new Word(Opcode.STD, 0, -1, 7), // 
 			new Word(Opcode.LDI, 8, -1, 2), // 
-			new Word(Opcode.LDI, 9, -1, 10), // 
+			new Word(Opcode.LDI, 9, -1,7), // 
 			new Word(Opcode.TRAP, -1, -1, -1),
 			new Word(Opcode.STOP, -1, -1, -1),
 			new Word(Opcode.DATA, -1, -1, -1)};
