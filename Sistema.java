@@ -10,6 +10,7 @@
 import java.io.Console;
 import java.lang.reflect.Constructor;
 import java.util.*;
+import java.util.concurrent.Semaphore;
 
 public class Sistema {	
 	public static int CPU_TIMER_SLICE = 5;
@@ -70,7 +71,7 @@ public class Sistema {
 	}
 
 	public enum Interrupts {               // possiveis interrupcoes que esta CPU gera
-		noInterrupt, intEnderecoInvalido, intInstrucaoInvalida, intOverflow, intSTOP, intTimerSlice;
+		noInterrupt, intEnderecoInvalido, intInstrucaoInvalida, intOverflow, intSTOP, intTimerSlice, intIO, intIOFinish;
 	}
 
 	public class ClockInterrupt {
@@ -101,6 +102,7 @@ public class Sistema {
 		private Word ir; 			// instruction register,
 		private int[] reg;       	// registradores da CPU
 		private Interrupts irpt; 	// durante instrucao, interrupcao pode ser sinalizada
+		private int irptPid; 		// pid do processo que gerou a interrupcao
 		private int base;   		// base e limite de acesso na memoria
 		private int limite; // por enquanto toda memoria pode ser acessada pelo processo rodando
 							// ATE AQUI: contexto da CPU - tudo que precisa sobre o estado de um processo para executa-lo
@@ -360,8 +362,8 @@ public class Sistema {
 
 					// Chamada de sistema
 					    case TRAP:
-						     sysCall.handle();            // <<<<< aqui desvia para rotina de chamada de sistema, no momento so temos IO
 							 pc++;
+						     sysCall.handle();            // <<<<< aqui desvia para rotina de chamada de sistema, no momento so temos IO
 						     break;
 
 					// Inexistente
@@ -424,6 +426,23 @@ public class Sistema {
 	// -------------------------------------------------------------------------------------------------------
 	// ------------------- S O F T W A R E - inicio ----------------------------------------------------------
 
+	public boolean hasProcess() {
+		return ready.size() > 0 || blocked.size() > 0;
+	}
+
+	public boolean getNextProcess() {
+		if (ready.size() == 0) {
+			if (vm.cpu.debug) System.out.println("Todos os processos foram finalizados");
+			return false;
+		}
+		Process next = ready.get(0);
+		if (vm.cpu.debug) System.out.println("Colocando processo " + next.pid + " na CPU");
+		next.moveToRunning();
+		next.restoreStatus();
+		return true;
+	}
+
+
 	// ------------------- I N T E R R U P C O E S  - rotinas de tratamento ----------------------------------
     public class InterruptHandling {
             public boolean handle(Interrupts irpt, int pc) {   // apenas avisa - todas interrupcoes neste momento finalizam o programa
@@ -435,17 +454,7 @@ public class Sistema {
 						return false;
 					}
 
-					if (ready.size() == 0) {
-						if (vm.cpu.debug) System.out.println("Todos os processos foram finalizados");
-						return false;
-					}
-					Process next = ready.get(0);
-					if (vm.cpu.debug) System.out.println("Colocando processo " + next.pid + " na CPU");
-					next.moveToRunning();
-					next.restoreStatus();
-
-
-					return true;
+					return getNextProcess();
 				} else if (irpt == Interrupts.intTimerSlice) {
 					if (vm.cpu.executionMode == "single") {
 						// Ignora o escalonamento de processos
@@ -461,12 +470,17 @@ public class Sistema {
 					// Move to ready
 					p.moveToReady();
 
-					// Get next process
-					Process next = ready.get(0);
-					if (vm.cpu.debug) System.out.println("Colocando processo " + next.pid + " na CPU");
-					next.moveToRunning();
-					next.restoreStatus();
-					return true;
+					return getNextProcess();
+				} else if (irpt == Interrupts.intIO) {
+					Process p = getProcess(vm.cpu.pid);
+					if (vm.cpu.debug) System.out.println("Removendo processo " + p.pid + " da CPU; Colocando na fila de bloqueado");
+					p.saveStatus();
+					p.moveToBlocked();
+
+					return getNextProcess();
+				} else if (irpt == Interrupts.intIOFinish) {
+					Process p = getProcess(vm.cpu.irptPid);
+					p.moveToReady();
 				}
 				
 				System.out.println("Interupção não tratada, finalizando processo: " + vm.cpu.pid);
@@ -475,16 +489,7 @@ public class Sistema {
 					return false;
 				}
 
-				if (ready.size() == 0) {
-					if (vm.cpu.debug) System.out.println("Todos os processos foram finalizados");
-					return false;
-				}
-				Process next = ready.get(0);
-				if (vm.cpu.debug) System.out.println("Colocando processo " + next.pid + " na CPU");
-				next.moveToRunning();
-				next.restoreStatus();
-
-				return true;
+				return getNextProcess();
 			}
 	}
 
@@ -501,22 +506,96 @@ public class Sistema {
 			int addressLogic = vm.cpu.reg[9];
 			int addressPhysical = vm.cpu.translateAddress(addressLogic);
 			// System.out.println("                                               Endereco logico: " + addressLogic + " / Endereco fisico: " + addressPhysical);
+			Process p = getProcess(vm.cpu.pid);
 			switch (op) {
 				case 1:
-					Scanner ler = new Scanner(System.in);
-					System.out.println("Digite um valor: ");
+					console.addRequest(new IORequest(p.pid, addressPhysical, op));
+					vm.cpu.irpt = Interrupts.intIO;
+					// Scanner ler = new Scanner(System.in);
+					// System.out.println("Digite um valor: ");
 
-					vm.mem.m[addressPhysical] = new Word(Opcode.DATA, -1, -1, ler.nextInt());
-					ler.nextLine();
+					// vm.mem.m[addressPhysical] = new Word(Opcode.DATA, -1, -1, ler.nextInt());
+					// ler.nextLine();
 					break;
 				case 2:
-					System.out.println("OUT: " + vm.cpu.m[addressPhysical].p);
+					// System.out.println("OUT: " + vm.cpu.m[addressPhysical].p);
+					console.addRequest(new IORequest(vm.cpu.pid, addressPhysical, op));
+					vm.cpu.irpt = Interrupts.intIO;
+
 					break;
 				default:
+					System.out.println("Chamada de sistema não tratada, finalizando processo: " + vm.cpu.pid);
+					vm.cpu.irpt = Interrupts.intSTOP;
 					break;
 			}
 		}
     }
+
+	class IORequest {
+		public int pid;
+		public int address;
+		public int op;
+		public IORequest(int _pid, int _address, int _op) {
+			pid = _pid;
+			address = _address;
+			op = _op;
+		}
+	}
+	class Console extends Thread {
+		public LinkedList<IORequest> requests;
+
+		public Console() {
+			requests = new LinkedList<IORequest>();
+		}
+
+		public void addRequest(IORequest request) {
+			requests.add(request);
+		}
+
+		public void requestInput() {
+			
+		}
+
+		@Override
+		public void run() {
+			while (true){
+				try {
+					Thread.sleep(100);
+				} catch (InterruptedException e) {
+					System.out.println("timer over");
+				}
+				if (requests.size() > 0) {
+					
+					IORequest request = requests.removeFirst();
+
+					try{
+						shell.sem.acquire();
+					} catch (InterruptedException e) {
+						System.out.println("timer over");
+					}
+
+					if (vm.cpu.debug) System.out.println("IO Request: PID: " + request.pid + " / Adress: " + request.address + " / OP: " + request.op);
+					switch (request.op) {
+						case 1:
+							Scanner ler = new Scanner(System.in);
+							System.out.println("Digite um valor: ");
+							vm.mem.m[request.address] = new Word(Opcode.DATA, -1, -1, ler.nextInt());
+							ler.nextLine();
+							break;
+						case 2:
+							System.out.println("OUT: " + vm.mem.m[request.address].p);
+							break;
+						default:
+							break;
+					}
+
+					vm.cpu.irpt = Interrupts.intIOFinish;
+					vm.cpu.irptPid = request.pid;
+					shell.sem.release();
+				}
+			}
+		}
+	}
 
     // ------------------ U T I L I T A R I O S   D O   S I S T E M A -----------------------------------------
 	// ------------------ load é invocado a partir de requisição do usuário
@@ -579,6 +658,7 @@ public class Sistema {
 	public int lastPid = 0;
 
 	public Console console;
+	public Shell shell;
 
 	public class GM {
 		int tamFrame;
@@ -735,6 +815,7 @@ public class Sistema {
 		public void moveToReady() {
 			ready.add(this);
 			running.remove(this);
+			blocked.remove(this);
 		}
 
 		public void moveToRunning() {
@@ -743,8 +824,9 @@ public class Sistema {
 		}
 
 		public void moveToBlocked() {
-			blocked.add(this);
 			running.remove(this);
+			blocked.add(this);
+			
 		}
 	}
 
@@ -805,6 +887,7 @@ public class Sistema {
 		 running = new ArrayList<Process>();
 		 blocked = new ArrayList<Process>();
 
+		 shell = new Shell();
 		 console = new Console();
 	}
 
@@ -847,6 +930,7 @@ public class Sistema {
 		// s.dumpMemory(0, 10);
 
 		// s.terminal();
+		s.shell.start();
 		s.console.start();
 	}
 
@@ -896,9 +980,11 @@ public class Sistema {
 			return false;
 		}
 	}
-	public class Console extends Thread {
+	public class Shell extends Thread {
 
-		public Console() {
+		public Semaphore sem = new Semaphore(1);
+
+		public Shell() {
 		}
 
 		public void ps() {
@@ -951,6 +1037,17 @@ public class Sistema {
 			Scanner sc = new Scanner(System.in);
 			String cmd = "";
 			while (true) {
+				try {
+					Thread.sleep(100);
+				} catch (InterruptedException e) {
+				}
+
+				try{
+					sem.acquire();
+				} catch (InterruptedException e) {
+					// e.printStackTrace();
+				}
+
 				System.out.print(">> ");
 				cmd = sc.nextLine();
 				cmd = cmd.toLowerCase();
@@ -1042,6 +1139,8 @@ public class Sistema {
 				} else {
 					System.out.println("Comando não encontrado");
 				}
+
+				sem.release();
 			}
 
 			sc.close();
