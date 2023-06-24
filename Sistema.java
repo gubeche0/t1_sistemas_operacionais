@@ -88,21 +88,27 @@ public class Sistema {
 		public void tick() { 
 			ticks++;
 			if (ticks % CPU_TIMER_SLICE == 0) {
-				cpu.irpt = Interrupts.intTimerSlice;
+				vm.cpu.interruptCPU(Interrupts.intTimerSlice);
 				ticks = 0;
 			}
 		}
 	}
 
-	public class CPU {
+	public class CPU extends Thread {
 		private int maxInt; // valores maximo e minimo para inteiros nesta cpu
 		private int minInt;
 							// característica do processador: contexto da CPU ...
 		private int pc; 			// ... composto de program counter,
 		private Word ir; 			// instruction register,
 		private int[] reg;       	// registradores da CPU
-		private Interrupts irpt; 	// durante instrucao, interrupcao pode ser sinalizada
-		private int irptPid; 		// pid do processo que gerou a interrupcao
+
+		private Semaphore irptSemaphore = new Semaphore(1); // semaforo para sincronizar CPU e tratador de interrupcoes
+		// private Interrupts irpt; 	// durante instrucao, interrupcao pode ser sinalizada
+		private List<Interrupts> irpt; 	// durante instrucao, interrupcao pode ser sinalizada
+
+		// private int irptPid; 		// pid do processo que gerou a interrupcao
+		private List<Integer> irptPid; 		// pid do processo que gerou a interrupcao
+
 		private int base;   		// base e limite de acesso na memoria
 		private int limite; // por enquanto toda memoria pode ser acessada pelo processo rodando
 							// ATE AQUI: contexto da CPU - tudo que precisa sobre o estado de um processo para executa-lo
@@ -118,8 +124,6 @@ public class Sistema {
 		private InterruptHandling ih;     // significa desvio para rotinas de tratamento de  Int - se int ligada, desvia
         private SysCallHandling sysCall;  // significa desvio para tratamento de chamadas de sistema - trap 
 		private boolean debug;            // se true entao mostra cada instrucao em execucao
-
-		public String executionMode = "single"; // single ou multi
 						
 		public CPU(Memory _mem, InterruptHandling _ih, SysCallHandling _sysCall, boolean _debug, ClockInterrupt _clock) {     // ref a MEMORIA e interrupt handler passada na criacao da CPU
 			maxInt =  32767;        // capacidade de representacao modelada
@@ -132,11 +136,14 @@ public class Sistema {
 			debug =  _debug;        // se true, print da instrucao em execucao
 			clock = _clock;
 			clock._setCpu(this);
+			irpt = new ArrayList<Interrupts>();
+			irptPid = new ArrayList<Integer>();
 		}
 		
-		private boolean legal(int e) {                             // todo acesso a memoria tem que ser verificado
+		private boolean legal(int e) {                    
 			if (!pages.Validade(e)) {
-				irpt = Interrupts.intEnderecoInvalido;             // se endereco invalido, registra interrupcao
+				             // se endereco invalido, registra interrupcao
+				vm.cpu.interruptCPU(Interrupts.intEnderecoInvalido);
 				return false;
 			}
 			return true;
@@ -147,8 +154,8 @@ public class Sistema {
 		}
 
 		private boolean testOverflow(int v) {                       // toda operacao matematica deve avaliar se ocorre overflow                      
-			if ((v < minInt) || (v > maxInt)) {                       
-				irpt = Interrupts.intOverflow;             
+			if ((v < minInt) || (v > maxInt)) {                           
+				vm.cpu.interruptCPU(Interrupts.intOverflow);        
 				return false;
 			};
 			return true;
@@ -166,222 +173,242 @@ public class Sistema {
 			base = 0;
 			limite = m.length - 1;
 			pc = p.pcb.pc;
-			irpt = Interrupts.noInterrupt;
+			// irpt = Interrupts.noInterrupt; // TODO: VALIDAR ISSO
 			pages = p.pages;
 			pid = p.pid;
 			reg = p.pcb.reg;
+		}
+
+		public void interruptCPU(Interrupts _irpt, int _pid) {          // interrupcao gerada por outro processo
+			// try {
+			// 	irptSemaphore.acquire();
+			// } catch (InterruptedException e) {
+			// }
+			// irpt = _irpt;                                           // salva tipo de interrupcao e pid do processo que gerou
+			// irptPid = _pid;                                         // a interrupcao
+			irpt.add(_irpt);
+			irptPid.add(_pid);
+		}
+
+		public void interruptCPU(Interrupts _irpt) {
+			interruptCPU(_irpt, pid);
 		}
 		
 		public void run() { 		// execucao da CPU supoe que o contexto da CPU, vide acima, esta devidamente setado			
 			while (true) { 			// ciclo de instrucoes. acaba cfe instrucao, veja cada caso.
 			   // --------------------------------------------------------------------------------------------------
-
-			   // TODO: Incrementar relogio aqui depois de implementar mecanismo de fila ou buffer para as interupcoes
-			   // Incrementa clock
+				try {
+					Thread.sleep(100);
+				} catch (InterruptedException e) {}
+			    // se pid == 0, náo ha processo rodando na CPU, neste caso 
+				// apenas verifica interupção.
+				
+				// Incrementa clock
 				clock.tick();
-
-			   // FETCH
-				if (legal(pc)) { 	// pc valido
-					ir = m[pages.getPyhsicalAddress(pc)]; 	// <<<<<<<<<<<<           busca posicao da memoria apontada por pc, guarda em ir
-					if (debug) { System.out.print("                               PID: "+ pid +" pc: "+pc+"       exec: ");  mem.dump(ir); }
-					// clock.tick();
-			   // --------------------------------------------------------------------------------------------------
-			   // EXECUTA INSTRUCAO NO ir
-					switch (ir.opc) {   // conforme o opcode (código de operação) executa
-
-					// Instrucoes de Busca e Armazenamento em Memoria
-					    case LDI: // Rd ← k
-							reg[ir.r1] = ir.p;
-							pc++;
-							break;
-
-						case LDD: // Rd <- [A]
-						    if (legal(ir.p)) {
-							   reg[ir.r1] = m[pages.getPyhsicalAddress(ir.p)].p;
-							   pc++;
-						    }
-						    break;
-
-						case LDX: // RD <- [RS] // NOVA
-							if (legal(reg[ir.r2])) {
-								reg[ir.r1] = m[pages.getPyhsicalAddress(reg[ir.r2])].p;
+			   if (pid > 0) {
+	
+				   // FETCH
+					if (legal(pc)) { 	// pc valido
+						ir = m[pages.getPyhsicalAddress(pc)]; 	// <<<<<<<<<<<<           busca posicao da memoria apontada por pc, guarda em ir
+						if (debug) { System.out.print("                               PID: "+ pid +" pc: "+pc+"       exec: ");  mem.dump(ir); }
+						// clock.tick();
+				   // --------------------------------------------------------------------------------------------------
+				   // EXECUTA INSTRUCAO NO ir
+						switch (ir.opc) {   // conforme o opcode (código de operação) executa
+	
+						// Instrucoes de Busca e Armazenamento em Memoria
+							case LDI: // Rd ← k
+								reg[ir.r1] = ir.p;
 								pc++;
-							}
-							break;
-
-						case STD: // [A] ← Rs
-						    if (legal(ir.p)) {
-							    m[pages.getPyhsicalAddress(ir.p)].opc = Opcode.DATA;
-							    m[pages.getPyhsicalAddress(ir.p)].p = reg[ir.r1];
-							    pc++;
-							};
-						    break;
-
-						case STX: // [Rd] ←Rs
-						    if (legal(reg[ir.r1])) {
-							    m[pages.getPyhsicalAddress(reg[ir.r1])].opc = Opcode.DATA;      
-							    m[pages.getPyhsicalAddress(reg[ir.r1])].p = reg[ir.r2];          
-								pc++;
-							};
-							break;
-						
-						case MOVE: // RD <- RS
-							reg[ir.r1] = reg[ir.r2];
-							pc++;
-							break;	
+								break;
+	
+							case LDD: // Rd <- [A]
+								if (legal(ir.p)) {
+								   reg[ir.r1] = m[pages.getPyhsicalAddress(ir.p)].p;
+								   pc++;
+								}
+								break;
+	
+							case LDX: // RD <- [RS] // NOVA
+								if (legal(reg[ir.r2])) {
+									reg[ir.r1] = m[pages.getPyhsicalAddress(reg[ir.r2])].p;
+									pc++;
+								}
+								break;
+	
+							case STD: // [A] ← Rs
+								if (legal(ir.p)) {
+									m[pages.getPyhsicalAddress(ir.p)].opc = Opcode.DATA;
+									m[pages.getPyhsicalAddress(ir.p)].p = reg[ir.r1];
+									pc++;
+								};
+								break;
+	
+							case STX: // [Rd] ←Rs
+								if (legal(reg[ir.r1])) {
+									m[pages.getPyhsicalAddress(reg[ir.r1])].opc = Opcode.DATA;      
+									m[pages.getPyhsicalAddress(reg[ir.r1])].p = reg[ir.r2];          
+									pc++;
+								};
+								break;
 							
-					// Instrucoes Aritmeticas
-						case ADD: // Rd ← Rd + Rs
-							reg[ir.r1] = reg[ir.r1] + reg[ir.r2];
-							testOverflow(reg[ir.r1]);
-							pc++;
-							break;
-
-						case ADDI: // Rd ← Rd + k
-							reg[ir.r1] = reg[ir.r1] + ir.p;
-							testOverflow(reg[ir.r1]);
-							pc++;
-							break;
-
-						case SUB: // Rd ← Rd - Rs
-							reg[ir.r1] = reg[ir.r1] - reg[ir.r2];
-							testOverflow(reg[ir.r1]);
-							pc++;
-							break;
-
-						case SUBI: // RD <- RD - k // NOVA
-							reg[ir.r1] = reg[ir.r1] - ir.p;
-							testOverflow(reg[ir.r1]);
-							pc++;
-							break;
-
-						case MULT: // Rd <- Rd * Rs
-							reg[ir.r1] = reg[ir.r1] * reg[ir.r2];  
-							testOverflow(reg[ir.r1]);
-							pc++;
-							break;
-
-					// Instrucoes JUMP
-						case JMP: // PC <- k
-							pc = ir.p;
-							break;
-						
-						case JMPIG: // If Rc > 0 Then PC ← Rs Else PC ← PC +1
-							if (reg[ir.r2] > 0) {
-								pc = reg[ir.r1];
-							} else {
+							case MOVE: // RD <- RS
+								reg[ir.r1] = reg[ir.r2];
 								pc++;
-							}
-							break;
-
-						case JMPIGK: // If RC > 0 then PC <- k else PC++
-							if (reg[ir.r2] > 0) {
+								break;	
+								
+						// Instrucoes Aritmeticas
+							case ADD: // Rd ← Rd + Rs
+								reg[ir.r1] = reg[ir.r1] + reg[ir.r2];
+								testOverflow(reg[ir.r1]);
+								pc++;
+								break;
+	
+							case ADDI: // Rd ← Rd + k
+								reg[ir.r1] = reg[ir.r1] + ir.p;
+								testOverflow(reg[ir.r1]);
+								pc++;
+								break;
+	
+							case SUB: // Rd ← Rd - Rs
+								reg[ir.r1] = reg[ir.r1] - reg[ir.r2];
+								testOverflow(reg[ir.r1]);
+								pc++;
+								break;
+	
+							case SUBI: // RD <- RD - k // NOVA
+								reg[ir.r1] = reg[ir.r1] - ir.p;
+								testOverflow(reg[ir.r1]);
+								pc++;
+								break;
+	
+							case MULT: // Rd <- Rd * Rs
+								reg[ir.r1] = reg[ir.r1] * reg[ir.r2];  
+								testOverflow(reg[ir.r1]);
+								pc++;
+								break;
+	
+						// Instrucoes JUMP
+							case JMP: // PC <- k
 								pc = ir.p;
-							} else {
-								pc++;
-							}
-							break;
-	
-						case JMPILK: // If RC < 0 then PC <- k else PC++
-							 if (reg[ir.r2] < 0) {
-								pc = ir.p;
-							} else {
-								pc++;
-							}
-							break;
-	
-						case JMPIEK: // If RC = 0 then PC <- k else PC++
-								if (reg[ir.r2] == 0) {
-									pc = ir.p;
-								} else {
-									pc++;
-								}
-							break;
-	
-	
-						case JMPIL: // if Rc < 0 then PC <- Rs Else PC <- PC +1
-								 if (reg[ir.r2] < 0) {
+								break;
+							
+							case JMPIG: // If Rc > 0 Then PC ← Rs Else PC ← PC +1
+								if (reg[ir.r2] > 0) {
 									pc = reg[ir.r1];
 								} else {
 									pc++;
 								}
-							break;
+								break;
+	
+							case JMPIGK: // If RC > 0 then PC <- k else PC++
+								if (reg[ir.r2] > 0) {
+									pc = ir.p;
+								} else {
+									pc++;
+								}
+								break;
 		
-						case JMPIE: // If Rc = 0 Then PC <- Rs Else PC <- PC +1
-								 if (reg[ir.r2] == 0) {
-									pc = reg[ir.r1];
-								} else {
-									pc++;
-								}
-							break; 
-	
-						case JMPIM: // PC <- [A]
-								 pc = m[pages.getPyhsicalAddress(ir.p)].p;
-							 break; 
-	
-						case JMPIGM: // If RC > 0 then PC <- [A] else PC++
-								 if (reg[ir.r2] > 0) {
-									pc = m[pages.getPyhsicalAddress(ir.p)].p;
-								} else {
-									pc++;
-								}
-							 break;  
-	
-						case JMPILM: // If RC < 0 then PC <- k else PC++
+							case JMPILK: // If RC < 0 then PC <- k else PC++
 								 if (reg[ir.r2] < 0) {
-									pc = m[pages.getPyhsicalAddress(ir.p)].p;
-								} else {
-									pc++;
-								}
-							 break; 
-	
-						case JMPIEM: // If RC = 0 then PC <- k else PC++
-								if (reg[ir.r2] == 0) {
-									pc = m[pages.getPyhsicalAddress(ir.p)].p;
-								} else {
-									pc++;
-								}
-							 break; 
-	
-						case JMPIGT: // If RS>RC then PC <- k else PC++
-								if (reg[ir.r1] > reg[ir.r2]) {
 									pc = ir.p;
 								} else {
 									pc++;
 								}
-							 break; 
-
-					// outras
-						case STOP: // por enquanto, para execucao
-							irpt = Interrupts.intSTOP;
-							break;
-
-						case DATA:
-							irpt = Interrupts.intInstrucaoInvalida;
-							break;
-
-					// Chamada de sistema
-					    case TRAP:
-							 pc++;
-						     sysCall.handle();            // <<<<< aqui desvia para rotina de chamada de sistema, no momento so temos IO
-						     break;
-
-					// Inexistente
-						default:
-							irpt = Interrupts.intInstrucaoInvalida;
-							break;
+								break;
+		
+							case JMPIEK: // If RC = 0 then PC <- k else PC++
+									if (reg[ir.r2] == 0) {
+										pc = ir.p;
+									} else {
+										pc++;
+									}
+								break;
+		
+		
+							case JMPIL: // if Rc < 0 then PC <- Rs Else PC <- PC +1
+									 if (reg[ir.r2] < 0) {
+										pc = reg[ir.r1];
+									} else {
+										pc++;
+									}
+								break;
+			
+							case JMPIE: // If Rc = 0 Then PC <- Rs Else PC <- PC +1
+									 if (reg[ir.r2] == 0) {
+										pc = reg[ir.r1];
+									} else {
+										pc++;
+									}
+								break; 
+		
+							case JMPIM: // PC <- [A]
+									 pc = m[pages.getPyhsicalAddress(ir.p)].p;
+								 break; 
+		
+							case JMPIGM: // If RC > 0 then PC <- [A] else PC++
+									 if (reg[ir.r2] > 0) {
+										pc = m[pages.getPyhsicalAddress(ir.p)].p;
+									} else {
+										pc++;
+									}
+								 break;  
+		
+							case JMPILM: // If RC < 0 then PC <- k else PC++
+									 if (reg[ir.r2] < 0) {
+										pc = m[pages.getPyhsicalAddress(ir.p)].p;
+									} else {
+										pc++;
+									}
+								 break; 
+		
+							case JMPIEM: // If RC = 0 then PC <- k else PC++
+									if (reg[ir.r2] == 0) {
+										pc = m[pages.getPyhsicalAddress(ir.p)].p;
+									} else {
+										pc++;
+									}
+								 break; 
+		
+							case JMPIGT: // If RS>RC then PC <- k else PC++
+									if (reg[ir.r1] > reg[ir.r2]) {
+										pc = ir.p;
+									} else {
+										pc++;
+									}
+								 break; 
+	
+						// outras
+							case STOP: // por enquanto, para execucao
+								vm.cpu.interruptCPU(Interrupts.intSTOP);
+								break;
+	
+							case DATA:
+								vm.cpu.interruptCPU(Interrupts.intInstrucaoInvalida);
+								break;
+	
+						// Chamada de sistema
+							case TRAP:
+								pc++;
+								sysCall.handle();            // <<<<< aqui desvia para rotina de chamada de sistema, no momento so temos IO
+								 break;
+	
+						// Inexistente
+							default:
+								vm.cpu.interruptCPU(Interrupts.intInstrucaoInvalida);
+								break;
+						}
 					}
-				}
+			   }
 			   // --------------------------------------------------------------------------------------------------
 			   // VERIFICA INTERRUPÇÃO !!! - TERCEIRA FASE DO CICLO DE INSTRUÇÕES
-				if (!(irpt == Interrupts.noInterrupt)) {   // existe interrupção
-
-					boolean continuar = ih.handle(irpt,pc);                   // desvia para rotina de tratamento
-					if (continuar) {
-						irpt = Interrupts.noInterrupt;
-					} else {
-						break; // break sai do loop da cpu
-					}
+				// if (!(irpt == Interrupts.noInterrupt)) {   // existe interrupção
+				// 	ih.handle(irpt,pc);                   // desvia para rotina de tratamento
+				// 	irpt = Interrupts.noInterrupt;
+				// 	irptSemaphore.release();
+				// }
+				while (!irpt.isEmpty()) {
+					ih.handle(irpt.remove(0),pc, irptPid.remove(0));                   // desvia para rotina de tratamento
 				}
 			}  // FIM DO CICLO DE UMA INSTRUÇÃO
 		}      
@@ -426,42 +453,59 @@ public class Sistema {
 	// -------------------------------------------------------------------------------------------------------
 	// ------------------- S O F T W A R E - inicio ----------------------------------------------------------
 
-	public boolean hasProcess() {
-		return ready.size() > 0 || blocked.size() > 0;
-	}
+	public class Escalonador {
+		public Semaphore semaforo = new Semaphore(1);
 
-	public boolean getNextProcess() {
-		if (ready.size() == 0) {
-			if (vm.cpu.debug) System.out.println("Todos os processos foram finalizados");
-			return false;
+		public boolean hasProcess() {
+			return ready.size() > 0 || blocked.size() > 0;
 		}
-		Process next = ready.get(0);
-		if (vm.cpu.debug) System.out.println("Colocando processo " + next.pid + " na CPU");
-		next.moveToRunning();
-		next.restoreStatus();
-		return true;
-	}
 
+		public void getNextProcess() {
+			// while (true) {
+			// 	if (ready.size() > 0) {
+			// 		break;
+			// 	}
+			// 	// System.out.println("Escalonador: Nao ha processos prontos, esperando");
+			// 	try {
+			// 		Thread.sleep(500);
+			// 	} catch (InterruptedException e) {
+			// 	}
+			// }
+			if (ready.size() == 0) {
+				vm.cpu.pid = -1;
+				return;
+			}
+			// try {
+			// 	semaforo.acquire();
+			// } catch (InterruptedException e) {
+			// }
+
+			Process next = ready.get(0);
+			if (vm.cpu.debug) System.out.println("Colocando processo " + next.pid + " na CPU");
+			next.moveToRunning();
+			next.restoreStatus();
+		}
+	}
 
 	// ------------------- I N T E R R U P C O E S  - rotinas de tratamento ----------------------------------
     public class InterruptHandling {
-            public boolean handle(Interrupts irpt, int pc) {   // apenas avisa - todas interrupcoes neste momento finalizam o programa
-				System.out.println("                                               Interrupcao "+ irpt+ "   pc: "+pc);
+            public void handle(Interrupts irpt, int pc, int pid) {   // apenas avisa - todas interrupcoes neste momento finalizam o programa
+				if (irpt != Interrupts.intTimerSlice || running.size() > 0) System.out.println("                                               Interrupcao "+ irpt+ "   pc: "+pc);
 				if (irpt == Interrupts.intSTOP) {
 					if (vm.cpu.debug) System.out.println("Processo finalizado: " + vm.cpu.pid);
 					killProcess(vm.cpu.pid); // kill and free process
-					if (vm.cpu.executionMode == "single") {
-						return false;
-					}
 
-					return getNextProcess();
+					escalonador.getNextProcess();
+					return;
 				} else if (irpt == Interrupts.intTimerSlice) {
-					if (vm.cpu.executionMode == "single") {
-						// Ignora o escalonamento de processos
-						return true;
+					if (vm.cpu.pid <= 0) {
+						escalonador.getNextProcess();
 					}
+					Process p = getProcessFromRunning(vm.cpu.pid);
 
-					Process p = getProcess(vm.cpu.pid);
+					if (p == null) {
+						return;
+					}
 					// System.out.println(running);
 					// System.out.println(ready);
 
@@ -470,26 +514,26 @@ public class Sistema {
 					// Move to ready
 					p.moveToReady();
 
-					return getNextProcess();
+					escalonador.getNextProcess();
+					return;
 				} else if (irpt == Interrupts.intIO) {
 					Process p = getProcess(vm.cpu.pid);
 					if (vm.cpu.debug) System.out.println("Removendo processo " + p.pid + " da CPU; Colocando na fila de bloqueado");
 					p.saveStatus();
 					p.moveToBlocked();
 
-					return getNextProcess();
+					escalonador.getNextProcess();
+					return;
 				} else if (irpt == Interrupts.intIOFinish) {
-					Process p = getProcess(vm.cpu.irptPid);
+					System.out.println("IO finalizado, colocando processo "+ pid +" na fila de pronto");
+					Process p = getProcess(pid);
 					p.moveToReady();
+					return;
 				}
 				
 				System.out.println("Interupção não tratada, finalizando processo: " + vm.cpu.pid);
 				killProcess(vm.cpu.pid);
-				if (vm.cpu.executionMode == "single") {
-					return false;
-				}
-
-				return getNextProcess();
+				escalonador.getNextProcess();
 			}
 	}
 
@@ -510,22 +554,26 @@ public class Sistema {
 			switch (op) {
 				case 1:
 					console.addRequest(new IORequest(p.pid, addressPhysical, op));
-					vm.cpu.irpt = Interrupts.intIO;
-					// Scanner ler = new Scanner(System.in);
-					// System.out.println("Digite um valor: ");
+					// vm.cpu.interruptCPU(Interrupts.intIO); // TODO: Fazer funcionar interupcao
+					p.saveStatus();
+					p.moveToBlocked();
+					escalonador.getNextProcess();
 
-					// vm.mem.m[addressPhysical] = new Word(Opcode.DATA, -1, -1, ler.nextInt());
-					// ler.nextLine();
+
+					
 					break;
 				case 2:
 					// System.out.println("OUT: " + vm.cpu.m[addressPhysical].p);
 					console.addRequest(new IORequest(vm.cpu.pid, addressPhysical, op));
-					vm.cpu.irpt = Interrupts.intIO;
+					// vm.cpu.interruptCPU(Interrupts.intIO);
+					p.saveStatus();
+					p.moveToBlocked();
+					escalonador.getNextProcess();
 
 					break;
 				default:
 					System.out.println("Chamada de sistema não tratada, finalizando processo: " + vm.cpu.pid);
-					vm.cpu.irpt = Interrupts.intSTOP;
+					vm.cpu.interruptCPU(Interrupts.intSTOP);
 					break;
 			}
 		}
@@ -589,8 +637,7 @@ public class Sistema {
 							break;
 					}
 
-					vm.cpu.irpt = Interrupts.intIOFinish;
-					vm.cpu.irptPid = request.pid;
+					vm.cpu.interruptCPU(Interrupts.intIOFinish, request.pid);
 					shell.sem.release();
 				}
 			}
@@ -657,6 +704,7 @@ public class Sistema {
 	public List<Process> ready, running, blocked ; //finished;
 	public int lastPid = 0;
 
+	public Escalonador escalonador;
 	public Console console;
 	public Shell shell;
 
@@ -889,6 +937,7 @@ public class Sistema {
 
 		 shell = new Shell();
 		 console = new Console();
+		 escalonador = new Escalonador();
 	}
 
     // -------------------  S I S T E M A - fim --------------------------------------------------------------
@@ -930,6 +979,7 @@ public class Sistema {
 		// s.dumpMemory(0, 10);
 
 		// s.terminal();
+		// s.escalonador.start();
 		s.shell.start();
 		s.console.start();
 	}
@@ -940,10 +990,8 @@ public class Sistema {
 		if (p != null) {
 			running.add(p);
 			ready.remove(p);
+			p.restoreStatus();
 
-			// vm.cpu.setContext(0, vm.tamMem - 1, p.pcb.pc, p.pages);
-			vm.cpu.setContext(p);
-			vm.cpu.executionMode = "single";
 			vm.cpu.run();
 		} else {
 			System.out.println("Processo não encontrado na fila de ready");
@@ -951,18 +999,8 @@ public class Sistema {
 	}
 
 	public void executaTudo() {
-		if (ready.size() > 0) {
-			Process p = ready.get(0);
-			running.add(p);
-			ready.remove(p);
-
-			// vm.cpu.setContext(0, vm.tamMem - 1, p.pcb.pc, p.pages);
-			vm.cpu.setContext(p);
-			vm.cpu.executionMode = "multi";
-			vm.cpu.run();
-		} else {
-			System.out.println("Não há processos na fila de ready");
-		}
+		escalonador.getNextProcess();
+		vm.cpu.start();
 	}
 
 	public boolean killProcess(int pid) { // Testar matar processo em execução
@@ -1084,11 +1122,11 @@ public class Sistema {
 					killProcess(pid);
 					sc.nextLine();
 
-				} else if (cmd.equals("exec")) {
-					System.out.print("PID: ");
-					int pid = sc.nextInt();
-					executaProcesso(pid);
-					sc.nextLine();
+				// } else if (cmd.equals("exec")) {
+				// 	System.out.print("PID: ");
+				// 	int pid = sc.nextInt();
+				// 	executaProcesso(pid);
+				// 	sc.nextLine();
 				} else if (cmd.equals("execall")) {
 					executaTudo();
 
@@ -1127,7 +1165,7 @@ public class Sistema {
 					System.out.println("Comandos:");
 					System.out.println("help");
 					System.out.println("load");
-					System.out.println("exec");
+					// System.out.println("exec");
 					System.out.println("execall");
 					System.out.println("ps");
 					System.out.println("kill");
