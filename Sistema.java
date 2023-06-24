@@ -7,6 +7,8 @@
 //    SW = tratamento int e chamada de sistema
 // Funcionalidades de carga, execução e dump de memória
 
+import java.io.Console;
+import java.lang.reflect.Constructor;
 import java.util.*;
 
 public class Sistema {	
@@ -576,6 +578,8 @@ public class Sistema {
 	public List<Process> ready, running, blocked ; //finished;
 	public int lastPid = 0;
 
+	public Console console;
+
 	public class GM {
 		int tamFrame;
 		int tamPage;
@@ -801,6 +805,7 @@ public class Sistema {
 		 running = new ArrayList<Process>();
 		 blocked = new ArrayList<Process>();
 
+		 console = new Console();
 	}
 
     // -------------------  S I S T E M A - fim --------------------------------------------------------------
@@ -841,9 +846,9 @@ public class Sistema {
 
 		// s.dumpMemory(0, 10);
 
-		s.terminal();
+		// s.terminal();
+		s.console.start();
 	}
-
 
 	public void executaProcesso(int pid) {
 		Process p = getProcessFromReady(pid);
@@ -876,36 +881,6 @@ public class Sistema {
 		}
 	}
 
-	public void ps() {
-		System.out.println("PID\t\tEstado");
-		for (int i = 0; i < ready.size(); i++) {
-			System.out.println(ready.get(i).pid + "\t\tReady");
-		}
-
-		for (int i = 0; i < running.size(); i++) {
-			System.out.println(running.get(i).pid + "\t\tRunning");
-		}
-
-		for (int i = 0; i < blocked.size(); i++) {
-			System.out.println(blocked.get(i).pid + "\t\tBlocked");
-		}
-	}
-
-	public void dumpProcess(int pid) {
-		Process p = getProcess(pid);
-
-		if (p != null) {
-			System.out.println("PID: " + p.pid);
-			System.out.println("PC: " + p.pcb.pc);
-			// System.out.println("SP: " + p.pcb.sp);
-			System.out.println("Reg: " + Arrays.toString(p.pcb.reg));
-			System.out.println("Frames: " + Arrays.toString(p.pages.framesAddresses));
-			System.out.println("Address Pyhsical: " + Arrays.toString(p.pages.getAddresses()));
-		} else {
-			System.out.println("Processo não encontrado na fila de ready");
-		}
-	}
-
 	public boolean killProcess(int pid) { // Testar matar processo em execução
 		Process p = getProcess(pid);
 
@@ -921,124 +896,163 @@ public class Sistema {
 			return false;
 		}
 	}
+	public class Console extends Thread {
 
-	public void dumpMemory(int start, int end) {
-		vm.mem.dump(start, end);
-	}
+		public Console() {
+		}
 
-	public void traceOn() {
-		vm.cpu.debug = true;
-	}
+		public void ps() {
+			System.out.println("PID\t\tEstado");
+			for (int i = 0; i < ready.size(); i++) {
+				System.out.println(ready.get(i).pid + "\t\tReady");
+			}
 
-	public void traceOff() {
-		vm.cpu.debug = false;
-	}
+			for (int i = 0; i < running.size(); i++) {
+				System.out.println(running.get(i).pid + "\t\tRunning");
+			}
 
-	public void exit() {
-		System.exit(0);
-	}
-
-	public void terminal() {
-		Scanner sc = new Scanner(System.in);
-		String cmd = "";
-		while (true) {
-			System.out.print(">> ");
-			cmd = sc.nextLine();
-			cmd = cmd.toLowerCase();
-			cmd = cmd.trim();
-			if (cmd.equals("exit")) {
-				break;
-
-			} else if (cmd.equals("ps")) {
-				ps();
-
-			} else if (cmd.equals("trace on")) {
-				traceOn();
-
-			} else if (cmd.equals("trace off")) {
-				traceOff();
-
-			} else if (cmd.equals("dump memory")) {
-				System.out.print("Start: ");
-				int start = sc.nextInt();
-				System.out.print("End: ");
-				int end = sc.nextInt();
-				dumpMemory(start, end);
-				sc.nextLine();
-
-			} else if (cmd.equals("dump process")) {
-				System.out.print("PID: ");
-				int pid = sc.nextInt();
-				dumpProcess(pid);
-				sc.nextLine();
-
-			} else if (cmd.equals("kill")) {
-				System.out.print("PID: ");
-				int pid = sc.nextInt();
-				killProcess(pid);
-				sc.nextLine();
-
-			} else if (cmd.equals("exec")) {
-				System.out.print("PID: ");
-				int pid = sc.nextInt();
-				executaProcesso(pid);
-				sc.nextLine();
-			} else if (cmd.equals("execall")) {
-				executaTudo();
-
-			} else if (cmd.equals("load")) {
-				System.out.print("Programa: ");
-				String prog = sc.nextLine();
-				if (prog.equals("fibonacci10")) {
-					criaProcesso(progs.fibonacci10);
-
-				} else if (prog.equals("fatorial")) {
-					criaProcesso(progs.fatorial);
-
-				} else if (prog.equals("fatorialTRAP")) {
-					criaProcesso(progs.fatorialTRAP);
-
-				} else if (prog.equals("fibonacciTRAP")) {
-					criaProcesso(progs.fibonacciTRAP);
-
-				} else if (prog.equals("PC")) {
-					criaProcesso(progs.PC);
-
-				} else if (prog.equals("testeInput")) {
-					criaProcesso(progs.testeInput);
-
-				} else if (prog.equals("testeOutput")) {
-					criaProcesso(progs.testeOutput);
-
-				} else if (prog.equals("progMinimo")) {
-					criaProcesso(progs.progMinimo);
-
-				} else {
-					System.out.println("Programa não encontrado");
-				}
-
-			} else if (cmd.equals("help")) {
-				System.out.println("Comandos:");
-				System.out.println("help");
-				System.out.println("load");
-				System.out.println("exec");
-				System.out.println("execall");
-				System.out.println("ps");
-				System.out.println("kill");
-				System.out.println("dump memory");
-				System.out.println("dump process");
-				System.out.println("trace on");
-				System.out.println("trace off");
-				System.out.println("exit");
-			} else {
-				System.out.println("Comando não encontrado");
+			for (int i = 0; i < blocked.size(); i++) {
+				System.out.println(blocked.get(i).pid + "\t\tBlocked");
 			}
 		}
 
-		sc.close();
-		exit();
-	}
+		public void dumpProcess(int pid) {
+			Process p = getProcess(pid);
 
+			if (p != null) {
+				System.out.println("PID: " + p.pid);
+				System.out.println("PC: " + p.pcb.pc);
+				// System.out.println("SP: " + p.pcb.sp);
+				System.out.println("Reg: " + Arrays.toString(p.pcb.reg));
+				System.out.println("Frames: " + Arrays.toString(p.pages.framesAddresses));
+				System.out.println("Address Pyhsical: " + Arrays.toString(p.pages.getAddresses()));
+			} else {
+				System.out.println("Processo não encontrado na fila de ready");
+			}
+		}
+
+		public void dumpMemory(int start, int end) {
+			vm.mem.dump(start, end);
+		}
+
+		public void traceOn() {
+			vm.cpu.debug = true;
+		}
+
+		public void traceOff() {
+			vm.cpu.debug = false;
+		}
+
+		public void exit() {
+			System.exit(0);
+		}
+
+		public void terminal() {
+			Scanner sc = new Scanner(System.in);
+			String cmd = "";
+			while (true) {
+				System.out.print(">> ");
+				cmd = sc.nextLine();
+				cmd = cmd.toLowerCase();
+				cmd = cmd.trim();
+				if (cmd.equals("exit")) {
+					break;
+
+				} else if (cmd.equals("ps")) {
+					ps();
+
+				} else if (cmd.equals("trace on")) {
+					traceOn();
+
+				} else if (cmd.equals("trace off")) {
+					traceOff();
+
+				} else if (cmd.equals("dump memory")) {
+					System.out.print("Start: ");
+					int start = sc.nextInt();
+					System.out.print("End: ");
+					int end = sc.nextInt();
+					dumpMemory(start, end);
+					sc.nextLine();
+
+				} else if (cmd.equals("dump process")) {
+					System.out.print("PID: ");
+					int pid = sc.nextInt();
+					dumpProcess(pid);
+					sc.nextLine();
+
+				} else if (cmd.equals("kill")) {
+					System.out.print("PID: ");
+					int pid = sc.nextInt();
+					killProcess(pid);
+					sc.nextLine();
+
+				} else if (cmd.equals("exec")) {
+					System.out.print("PID: ");
+					int pid = sc.nextInt();
+					executaProcesso(pid);
+					sc.nextLine();
+				} else if (cmd.equals("execall")) {
+					executaTudo();
+
+				} else if (cmd.equals("load")) {
+					System.out.print("Programa: ");
+					String prog = sc.nextLine();
+					if (prog.equals("fibonacci10")) {
+						criaProcesso(progs.fibonacci10);
+
+					} else if (prog.equals("fatorial")) {
+						criaProcesso(progs.fatorial);
+
+					} else if (prog.equals("fatorialTRAP")) {
+						criaProcesso(progs.fatorialTRAP);
+
+					} else if (prog.equals("fibonacciTRAP")) {
+						criaProcesso(progs.fibonacciTRAP);
+
+					} else if (prog.equals("PC")) {
+						criaProcesso(progs.PC);
+
+					} else if (prog.equals("testeInput")) {
+						criaProcesso(progs.testeInput);
+
+					} else if (prog.equals("testeOutput")) {
+						criaProcesso(progs.testeOutput);
+
+					} else if (prog.equals("progMinimo")) {
+						criaProcesso(progs.progMinimo);
+
+					} else {
+						System.out.println("Programa não encontrado");
+					}
+
+				} else if (cmd.equals("help")) {
+					System.out.println("Comandos:");
+					System.out.println("help");
+					System.out.println("load");
+					System.out.println("exec");
+					System.out.println("execall");
+					System.out.println("ps");
+					System.out.println("kill");
+					System.out.println("dump memory");
+					System.out.println("dump process");
+					System.out.println("trace on");
+					System.out.println("trace off");
+					System.out.println("exit");
+				} else {
+					System.out.println("Comando não encontrado");
+				}
+			}
+
+			sc.close();
+			exit();
+		}
+
+		@Override
+		public void run() {
+			terminal();
+		}
+	}
 
    // -------------------------------------------------------------------------------------------------------
    // -------------------------------------------------------------------------------------------------------
