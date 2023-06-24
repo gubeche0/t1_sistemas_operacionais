@@ -71,7 +71,7 @@ public class Sistema {
 	}
 
 	public enum Interrupts {               // possiveis interrupcoes que esta CPU gera
-		noInterrupt, intEnderecoInvalido, intInstrucaoInvalida, intOverflow, intSTOP, intTimerSlice, intIO, intIOFinish;
+		noInterrupt, intEnderecoInvalido, intInstrucaoInvalida, intOverflow, intSTOP, intTimerSlice, intIOFinish;
 	}
 
 	public class ClockInterrupt {
@@ -200,12 +200,12 @@ public class Sistema {
 				try {
 					Thread.sleep(100);
 				} catch (InterruptedException e) {}
-			    // se pid == 0, náo ha processo rodando na CPU, neste caso 
-				// apenas verifica interupção.
-				
 				// Incrementa clock
 				clock.tick();
-			   if (pid > 0) {
+
+			    // se running.size() == 0, náo ha processo rodando na CPU, neste caso 
+				// apenas verifica interupção.
+			   if (running.size() > 0) {
 	
 				   // FETCH
 					if (legal(pc)) { 	// pc valido
@@ -471,7 +471,7 @@ public class Sistema {
 			// 	} catch (InterruptedException e) {
 			// 	}
 			// }
-			if (ready.size() == 0) {
+			if (ready.size() == 0 && running.size() == 0) {
 				vm.cpu.pid = -1;
 				return;
 			}
@@ -490,37 +490,27 @@ public class Sistema {
 	// ------------------- I N T E R R U P C O E S  - rotinas de tratamento ----------------------------------
     public class InterruptHandling {
             public void handle(Interrupts irpt, int pc, int pid) {   // apenas avisa - todas interrupcoes neste momento finalizam o programa
-				if (irpt != Interrupts.intTimerSlice || running.size() > 0) System.out.println("                                               Interrupcao "+ irpt+ "   pc: "+pc);
+				if (irpt != Interrupts.intTimerSlice || running.size() > 0) System.out.println("                                               Interrupcao "+ irpt+ "   pc: "+pc + " PID: " + pid);
 				if (irpt == Interrupts.intSTOP) {
-					if (vm.cpu.debug) System.out.println("Processo finalizado: " + vm.cpu.pid);
-					killProcess(vm.cpu.pid); // kill and free process
+					if (vm.cpu.debug) System.out.println("Processo finalizado: " + pid);
+					killProcess(pid); // kill and free process
 
-					escalonador.getNextProcess();
+					// escalonador.getNextProcess();
 					return;
 				} else if (irpt == Interrupts.intTimerSlice) {
-					if (vm.cpu.pid <= 0) {
+					if (pid <= 0) {
 						escalonador.getNextProcess();
 					}
-					Process p = getProcessFromRunning(vm.cpu.pid);
+					Process p = getProcessFromRunning(pid);
 
 					if (p == null) {
 						return;
 					}
-					// System.out.println(running);
-					// System.out.println(ready);
 
-					if (vm.cpu.debug) System.out.println("Removendo processo " + p.pid + " da CPU; Colocando na fila de pronto");
+					if (vm.cpu.debug) System.out.println("Removendo processo " + pid + " da CPU; Colocando na fila de pronto");
 					p.saveStatus();
 					// Move to ready
 					p.moveToReady();
-
-					escalonador.getNextProcess();
-					return;
-				} else if (irpt == Interrupts.intIO) {
-					Process p = getProcess(vm.cpu.pid);
-					if (vm.cpu.debug) System.out.println("Removendo processo " + p.pid + " da CPU; Colocando na fila de bloqueado");
-					p.saveStatus();
-					p.moveToBlocked();
 
 					escalonador.getNextProcess();
 					return;
@@ -531,8 +521,8 @@ public class Sistema {
 					return;
 				}
 				
-				System.out.println("Interupção não tratada, finalizando processo: " + vm.cpu.pid);
-				killProcess(vm.cpu.pid);
+				System.out.println("Interupção não tratada, finalizando processo: " + pid);
+				killProcess(pid);
 				escalonador.getNextProcess();
 			}
 	}
@@ -626,12 +616,12 @@ public class Sistema {
 					switch (request.op) {
 						case 1:
 							Scanner ler = new Scanner(System.in);
-							System.out.println("Digite um valor: ");
+							System.out.println("[PID: " + request.pid + "] Digite um valor: ");
 							vm.mem.m[request.address] = new Word(Opcode.DATA, -1, -1, ler.nextInt());
 							ler.nextLine();
 							break;
 						case 2:
-							System.out.println("OUT: " + vm.mem.m[request.address].p);
+							System.out.println("[PID: " + request.pid + "] OUT: " + vm.mem.m[request.address].p);
 							break;
 						default:
 							break;
@@ -872,6 +862,7 @@ public class Sistema {
 		}
 
 		public void moveToBlocked() {
+			if (vm.cpu.debug) System.out.println("Colocando processo " + pid + " na fila de bloqueado");
 			running.remove(this);
 			blocked.add(this);
 			
@@ -1010,8 +1001,12 @@ public class Sistema {
 			ready.remove(p);
 			running.remove(p);
 			blocked.remove(p);
-
 			p.free();
+
+			if (p.pid == vm.cpu.pid) {
+				escalonador.getNextProcess();
+			}
+
 			return true;
 		} else {
 			System.out.println("Processo não encontrado na filas");
@@ -1203,6 +1198,7 @@ public class Sistema {
 			new Word(Opcode.LDI, 8, -1, 1), // r8 = input
 			new Word(Opcode.LDI, 9, -1, 4), // r9 = input
 			new Word(Opcode.TRAP, -1, -1, -1),
+			new Word(Opcode.STD, 9, -1, 6),
 			new Word(Opcode.STOP, -1, -1, -1),
 			new Word(Opcode.DATA, -1, -1, -1)};
 
