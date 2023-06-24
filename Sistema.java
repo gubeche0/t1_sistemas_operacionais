@@ -180,14 +180,16 @@ public class Sistema {
 		}
 
 		public void interruptCPU(Interrupts _irpt, int _pid) {          // interrupcao gerada por outro processo
-			// try {
-			// 	irptSemaphore.acquire();
-			// } catch (InterruptedException e) {
-			// }
+			try {
+				irptSemaphore.acquire();
+			} catch (InterruptedException e) {
+			}
 			// irpt = _irpt;                                           // salva tipo de interrupcao e pid do processo que gerou
 			// irptPid = _pid;                                         // a interrupcao
 			irpt.add(_irpt);
 			irptPid.add(_pid);
+
+			irptSemaphore.release();
 		}
 
 		public void interruptCPU(Interrupts _irpt) {
@@ -407,9 +409,14 @@ public class Sistema {
 				// 	irpt = Interrupts.noInterrupt;
 				// 	irptSemaphore.release();
 				// }
+				try {
+					irptSemaphore.acquire();
+				} catch (InterruptedException e) {
+				}
 				while (!irpt.isEmpty()) {
 					ih.handle(irpt.remove(0),pc, irptPid.remove(0));                   // desvia para rotina de tratamento
 				}
+				irptSemaphore.release();
 			}  // FIM DO CICLO DE UMA INSTRUÇÃO
 		}      
 	}
@@ -974,24 +981,15 @@ public class Sistema {
 		s.shell.start();
 		s.console.start();
 	}
-
-	public void executaProcesso(int pid) {
-		Process p = getProcessFromReady(pid);
-
-		if (p != null) {
-			running.add(p);
-			ready.remove(p);
-			p.restoreStatus();
-
-			vm.cpu.run();
-		} else {
-			System.out.println("Processo não encontrado na fila de ready");
-		}
-	}
-
+	public boolean cpuIsRunning = false;
 	public void executaTudo() {
+		if (cpuIsRunning) {
+			System.out.println("CPU já está em execução");
+			return;
+		}
 		escalonador.getNextProcess();
 		vm.cpu.start();
+		cpuIsRunning = true;
 	}
 
 	public boolean killProcess(int pid) { // Testar matar processo em execução
@@ -1198,7 +1196,6 @@ public class Sistema {
 			new Word(Opcode.LDI, 8, -1, 1), // r8 = input
 			new Word(Opcode.LDI, 9, -1, 4), // r9 = input
 			new Word(Opcode.TRAP, -1, -1, -1),
-			new Word(Opcode.STD, 9, -1, 6),
 			new Word(Opcode.STOP, -1, -1, -1),
 			new Word(Opcode.DATA, -1, -1, -1)};
 
